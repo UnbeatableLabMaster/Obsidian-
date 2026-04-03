@@ -874,7 +874,7 @@ class KanbanView extends BasesView {
             cardEl.onkeydown = (e: KeyboardEvent) => { if ((e.key === " " || e.key === "Enter") && document.activeElement !== cardTitleEl && card.type === 'file') { e.preventDefault(); checkbox.checked = !checkbox.checked; checkbox.dispatchEvent(new Event("change")); } };
         };
 
-        // ✅ v1.0.14: 在 boardEl 捕获阶段记录 mousedown 时的精确偏移
+        // ✅ v1.0.1: 在 boardEl 捕获阶段记录 mousedown 时的精确偏移
         let _dragOffsetX = 8;
         let _dragOffsetY = 8;
 
@@ -886,11 +886,14 @@ class KanbanView extends BasesView {
             _dragOffsetY = Math.round(e.clientY - rect.top);
         }, true);
 
+        // ✅ v1.0.1: 多选拖拽跟随鼠标的浮动层 — 整个看板共用一个实例
+        let _multiFloatEl: HTMLElement | null = null;
+        let _multiFloatCleanup: (() => void) | null = null;
+
         const initSortable = (container: HTMLElement) => {
             const sortable = new Sortable(container, {
                 group: 'shared', animation: settings.animationDuration, easing: easingCurve,
-                // ✅ v1.0.14 FIX: 使用原生 HTML5 拖拽（forceFallback: false）避免坐标系错位
-                // 原生拖拽在 Obsidian Electron 环境中能正确处理 body transform
+                // ✅ v1.0.1: 使用原生 HTML5 拖拽避免坐标系错位
                 forceFallback: false,
                 scroll: true, scrollSensitivity: 80, scrollSpeed: 15,
                 filter: ".kanban-card-checkbox, .kanban-card-title, .kanban-card-menu-btn, .kanban-card-open-btn", preventOnFilter: false,
@@ -902,44 +905,56 @@ class KanbanView extends BasesView {
                     this.boardEl.addClass("is-dragging-card");
                     const item = evt.item as HTMLElement;
 
-                    // ✅ v1.0.15: 多选拖拽时，构建包含所有选中卡片的叠层预览图
                     const draggedId = item.dataset.id;
                     const isMultiDrag = draggedId && this.selectedCards.has(draggedId) && this.selectedCards.size > 1;
 
                     const w = item.offsetWidth;
                     const h = item.offsetHeight;
 
-                    let dragImageEl: HTMLElement;
+                    // 清理上次残留的浮动层（防御性）
+                    if (_multiFloatEl && _multiFloatEl.parentNode) _multiFloatEl.parentNode.removeChild(_multiFloatEl);
+                    _multiFloatEl = null;
+                    if (_multiFloatCleanup) { _multiFloatCleanup(); _multiFloatCleanup = null; }
 
                     if (isMultiDrag) {
                         // 按照 DOM 顺序收集选中的卡片元素
                         const allDomCards = Array.from(this.boardEl.querySelectorAll('.kanban-card')) as HTMLElement[];
                         const selectedEls = allDomCards.filter(el => this.selectedCards.has(el.dataset.id!));
+                        const count = selectedEls.length;
 
-                        // 创建叠层容器
-                        dragImageEl = document.createElement('div');
-                        dragImageEl.style.cssText = [
+                        // ① 创建跟随鼠标的浮动层（绝对定位于 body）
+                        const floatEl = document.createElement('div');
+                        floatEl.style.cssText = [
                             `width:${w}px`,
-                            `height:${h + (selectedEls.length - 1) * 6}px`,
-                            'position:fixed', 'top:-9999px', 'left:-9999px',
-                            'pointer-events:none', 'z-index:9999',
+                            `height:${h}px`,
+                            'position:fixed',
+                            'pointer-events:none',
+                            'z-index:10000',
+                            'top:0', 'left:0',
+                            // 初始位置移出视口，等第一次 drag 事件再定位
+                            'transform:translate(-9999px,-9999px)',
                         ].join(';');
 
-                        // 叠层渲染：最下面的卡片先渲染，主卡片在最上层
+                        // ② 叠层渲染：扇形发牌效果，底部卡片先渲染
                         selectedEls.forEach((el, i) => {
                             const clone = el.cloneNode(true) as HTMLElement;
-                            const offset = (selectedEls.length - 1 - i) * 6;
+                            const isTop = i === count - 1;
+                            // 发牌时初始旋转角：底层偏左，顶层偏右，收拢到 0
+                            const initRotate = (i - (count - 1) / 2) * 8;
+                            const initTranslateY = Math.abs(i - (count - 1) / 2) * -4;
                             clone.style.cssText = [
                                 `width:${w}px`, `height:${h}px`,
-                                'position:absolute', `top:${offset}px`, 'left:0',
-                                `opacity:${i === selectedEls.length - 1 ? '0.95' : String(0.5 + i * 0.1)}`,
+                                'position:absolute', 'top:0', 'left:0',
+                                `opacity:${isTop ? 0.95 : 0.55 + i * 0.08}`,
                                 'background:var(--background-primary)',
                                 'border:2px solid var(--interactive-accent)',
-                                `box-shadow:0 ${4 + i * 2}px ${12 + i * 4}px rgba(0,0,0,0.18)`,
+                                `box-shadow:0 ${4 + i * 2}px ${10 + i * 3}px rgba(0,0,0,0.18)`,
                                 'border-radius:6px', 'box-sizing:border-box', 'overflow:hidden',
-                                `transform:rotate(${i === selectedEls.length - 1 ? 2 : (i - selectedEls.length + 2) * 1.5}deg)`,
+                                // 初始：展开（发牌状态）
+                                `transform:rotate(${initRotate}deg) translateY(${initTranslateY}px)`,
+                                'transition:transform 0.35s cubic-bezier(0.22,1,0.36,1), opacity 0.35s ease',
                             ].join(';');
-                            dragImageEl.appendChild(clone);
+                            floatEl.appendChild(clone);
                         });
 
                         // 数量角标
@@ -952,16 +967,55 @@ class KanbanView extends BasesView {
                             'font-size:11px', 'font-weight:700', 'z-index:1',
                             'box-shadow:0 2px 4px rgba(0,0,0,0.2)',
                         ].join(';');
-                        badge.textContent = String(selectedEls.length);
-                        dragImageEl.appendChild(badge);
+                        badge.textContent = String(count);
+                        floatEl.appendChild(badge);
 
-                        // 其他选中的卡片保持半透明可见（不隐藏）
-                        selectedEls.forEach(el => {
-                            if (el !== item) el.style.opacity = '0.3';
+                        document.body.appendChild(floatEl);
+                        _multiFloatEl = floatEl;
+
+                        // ③ 收拢动画：短暂延迟后将所有克隆卡片 transform 归零（叠在一起）
+                        requestAnimationFrame(() => {
+                            requestAnimationFrame(() => {
+                                const clones = floatEl.querySelectorAll('div:not(:last-child)') as NodeListOf<HTMLElement>;
+                                clones.forEach((clone: HTMLElement) => {
+                                    clone.style.transform = 'rotate(0deg) translateY(0px)';
+                                });
+                            });
                         });
+
+                        // ④ 监听 drag 事件实时移动浮动层（HTML5 drag 事件携带坐标）
+                        const onDrag = (e: DragEvent) => {
+                            if (e.clientX === 0 && e.clientY === 0) return; // 拖出窗口时忽略
+                            const x = e.clientX - _dragOffsetX;
+                            const y = e.clientY - _dragOffsetY;
+                            floatEl.style.transform = `translate(${x}px,${y}px)`;
+                        };
+                        document.addEventListener('drag', onDrag);
+
+                        // ⑤ 其他选中的卡片变为半透明
+                        selectedEls.forEach(el => {
+                            if (el !== item) el.style.opacity = '0.25';
+                        });
+
+                        _multiFloatCleanup = () => {
+                            document.removeEventListener('drag', onDrag);
+                        };
+
+                        // ⑥ 为 SortableJS 提供一个透明占位图（避免浏览器默认拖拽幽灵）
+                        const transparentImg = document.createElement('canvas');
+                        transparentImg.width = 1; transparentImg.height = 1;
+                        document.body.appendChild(transparentImg);
+                        const nativeDragEvent = evt.originalEvent as DragEvent;
+                        if (nativeDragEvent?.dataTransfer) {
+                            nativeDragEvent.dataTransfer.effectAllowed = 'move';
+                            nativeDragEvent.dataTransfer.setDragImage(transparentImg, 0, 0);
+                        }
+                        // canvas 仅用于 setDragImage，之后立即移除
+                        requestAnimationFrame(() => { if (transparentImg.parentNode) transparentImg.parentNode.removeChild(transparentImg); });
+
                     } else {
-                        // 单选：创建单张卡片预览图
-                        dragImageEl = item.cloneNode(true) as HTMLElement;
+                        // 单选：创建单张卡片预览图（原有逻辑）
+                        const dragImageEl = item.cloneNode(true) as HTMLElement;
                         dragImageEl.style.cssText = [
                             `width:${w}px`, `height:${h}px`,
                             'position:fixed', 'top:-9999px', 'left:-9999px',
@@ -972,30 +1026,52 @@ class KanbanView extends BasesView {
                             'border-radius:6px', 'box-sizing:border-box', 'overflow:hidden',
                             'transform:rotate(2deg)',
                         ].join(';');
+                        document.body.appendChild(dragImageEl);
+                        (item as any)._dragImageEl = dragImageEl;
+
+                        const nativeDragEvent = evt.originalEvent as DragEvent;
+                        if (nativeDragEvent?.dataTransfer) {
+                            nativeDragEvent.dataTransfer.effectAllowed = 'move';
+                            nativeDragEvent.dataTransfer.setDragImage(dragImageEl, _dragOffsetX, _dragOffsetY);
+                        }
                     }
 
-                    document.body.appendChild(dragImageEl);
-                    (item as any)._dragImageEl = dragImageEl;
-
-                    // 设置自定义拖拽图像
-                    const nativeDragEvent = evt.originalEvent as DragEvent;
-                    if (nativeDragEvent?.dataTransfer) {
-                        nativeDragEvent.dataTransfer.effectAllowed = 'move';
-                        nativeDragEvent.dataTransfer.setDragImage(dragImageEl, _dragOffsetX, _dragOffsetY);
-                    }
-
-                    // ✅ 不隐藏原始元素，让 ghost 占位符可见
+                    // 主卡片半透明（让 ghost 占位符可见）
                     item.style.opacity = '0.4';
                 },
                 onEnd: async (evt: any) => {
                     this.boardEl.removeClass("is-dragging-card");
-                    // ✅ v1.0.14: 恢复原始元素显示，清理 drag image 节点
+
+                    // ✅ v1.0.1: 释放动画 — 多选浮动层展开后淡出（模拟发牌反向）
+                    if (_multiFloatEl) {
+                        const floatEl = _multiFloatEl;
+                        // 清理监听器
+                        if (_multiFloatCleanup) { _multiFloatCleanup(); _multiFloatCleanup = null; }
+
+                        // 展开（发散）动画
+                        const clones = floatEl.querySelectorAll('div:not(:last-child)') as NodeListOf<HTMLElement>;
+                        const count = clones.length;
+                        clones.forEach((clone: HTMLElement, i: number) => {
+                            const finalRotate = (i - (count - 1) / 2) * 10;
+                            const finalY = (i - (count - 1) / 2) * -8;
+                            clone.style.transition = 'transform 0.3s cubic-bezier(0.22,1,0.36,1), opacity 0.3s ease';
+                            clone.style.transform = `rotate(${finalRotate}deg) translateY(${finalY}px)`;
+                            clone.style.opacity = '0';
+                        });
+                        // 动画结束后移除
+                        setTimeout(() => {
+                            if (floatEl.parentNode) floatEl.parentNode.removeChild(floatEl);
+                        }, 320);
+                        _multiFloatEl = null;
+                    }
+
+                    // 单选：恢复原始元素，清理 drag image 节点
                     evt.item.style.opacity = '';
                     const dragImg = (evt.item as any)._dragImageEl;
                     if (dragImg && dragImg.parentNode) dragImg.parentNode.removeChild(dragImg);
                     delete (evt.item as any)._dragImageEl;
 
-                    // ✅ v1.0.15: 恢复多选时其他卡片的透明度（不再使用 is-hidden-by-multidrag）
+                    // 恢复所有卡片透明度
                     this.boardEl.querySelectorAll('.kanban-card').forEach((el: Element) => {
                         (el as HTMLElement).style.opacity = '';
                     });
