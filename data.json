@@ -1,0 +1,418 @@
+{
+  "defaultGroupBy": "status",
+  "dragLocked": false,
+  "dragDelay": 0,
+  "globalHiddenColumns": [
+    "待分类",
+    "待分类任务"
+  ],
+  "hiddenColumns": {
+    "任务执行情况": [],
+    "任务所属项目": [],
+    "任务优先程度": [],
+    "status": [],
+    "任务阶段": [],
+    "执行进度": [],
+    "项目环节": []
+  },
+  "progressBarDisplay": "animated",
+  "progressBarColor": "",
+  "progressBarAnimStyle": "shine",
+  "progressBarSpeed": 1.5,
+  "pinnedDisplayAnimation": "slide",
+  "styleCompletedCards": false,
+  "fadeBackground": false,
+  "showGhostBorder": true,
+  "ghostBorderStyle": "filled",
+  "animationDuration": 200,
+  "animationStyle": "smooth",
+  "projectProperty": "项目环节",
+  "uncategorizedName": "待分类",
+  "defaultOrderProperty": "项目环节",
+  "orderPrefix": "T",
+  "orderMiddleProperty": "",
+  "orderSeparator": "-",
+  "orderFormat": "padded",
+  "pinnedOrderProperty": "任务阶段总结",
+  "pinnedOrderPrefix": "",
+  "pinnedOrderSeparator": "-",
+  "pinnedOrderFormat": "padded",
+  "orderBadgePrefix": "#",
+  "orderBadgeStyle": "ordinal",
+  "stageProperty": "任务所属项目",
+  "stageValues": [],
+  "progressProperty": "执行进度",
+  "progressCompletedValue": "已完成",
+  "progressUncheckedValue": "暂搁置",
+  "progressDraftValue": "待计划",
+  "pinnedProperty": "任务核心总结",
+  "archiveProperty": "任务归档状态",
+  "archiveCycleProperty": "任务完成周期",
+  "customSortProperty": "",
+  "showCardPath": false,
+  "dateFormat": "YYYY-MM-DD",
+  "archivedColumns": {
+    "任务执行情况": [],
+    "任务所属项目": [],
+    "任务优先程度": [],
+    "status": [],
+    "任务阶段": [],
+    "执行进度": [],
+    "项目环节": []
+  },
+  "archivedColumnMeta": {},
+  "columnSortDir": {
+    "DNA 序列处理模型调研": "desc"
+  },
+  "expandedPinnedCols": {
+    "任务执行情况": [],
+    "任务所属项目": [],
+    "项目环节": []
+  },
+  "defaultNewNoteFolder": "",
+  "defaultNewNoteProps": [],
+  "columnWidths": {
+    "蛋白质功能优化模型调研": 322,
+    "待计划": 258,
+    "DNA 序列处理模型调研": 322
+  },
+  "columnOrders": {
+    "任务执行情况": [
+      "暂搁置",
+      "待计划",
+      "待分类",
+      "已完成"
+    ],
+    "任务所属项目": [
+      "蛋白质功能优化模型调研",
+      "DNA 序列处理模型调研",
+      "待分类"
+    ],
+    "任务优先程度": [
+      "高优先级",
+      "待分类任务",
+      "待分类任务",
+      "待分类"
+    ],
+    "status": [
+      "待分类"
+    ],
+    "任务阶段": [
+      "待计划",
+      "进行中",
+      "待分类",
+      "暂搁置",
+      "已完成"
+    ],
+    "执行进度": [
+      "待计划",
+      "进行中",
+      "暂搁置",
+      "已完成"
+    ],
+    "项目环节": [
+      "DNA 序列处理模型调研"
+    ]
+  },
+  "cardAliases": {},
+  "autoNumberGroups": [
+    "任务所属项目",
+    "项目环节"
+  ],
+  "progressSyncGroups": [
+    "任务执行情况",
+    "任务阶段",
+    "执行进度"
+  ],
+  "virtualCards": [],
+  "viewMetaConfigs": {
+    "任务执行情况": [
+      {
+        "id": "order",
+        "type": "order",
+        "propKey": "",
+        "name": "任务阶段(简写)",
+        "enabled": false,
+        "align": "left"
+      },
+      {
+        "id": "ctime",
+        "type": "ctime",
+        "propKey": "",
+        "name": "创建时间",
+        "enabled": false,
+        "align": "left"
+      },
+      {
+        "id": "custom_1774950870726",
+        "type": "custom",
+        "propKey": "任务优先程度",
+        "name": "任务优先程度",
+        "enabled": true,
+        "align": "right"
+      }
+    ],
+    "任务所属项目": [
+      {
+        "id": "order",
+        "type": "order",
+        "propKey": "",
+        "name": "任务阶段(简写)",
+        "enabled": true,
+        "align": "left"
+      },
+      {
+        "id": "ctime",
+        "type": "ctime",
+        "propKey": "",
+        "name": "创建时间",
+        "enabled": false,
+        "align": "left"
+      },
+      {
+        "id": "project",
+        "type": "project",
+        "propKey": "",
+        "name": "所属项目",
+        "enabled": true,
+        "align": "right"
+      },
+      {
+        "id": "progress",
+        "type": "progress",
+        "propKey": "",
+        "name": "任务进度",
+        "enabled": true,
+        "align": "right"
+      }
+    ],
+    "任务阶段": [
+      {
+        "id": "order",
+        "type": "order",
+        "propKey": "",
+        "name": "任务阶段(简写)",
+        "enabled": false,
+        "align": "left"
+      },
+      {
+        "id": "ctime",
+        "type": "ctime",
+        "propKey": "",
+        "name": "创建时间",
+        "enabled": true,
+        "align": "left"
+      },
+      {
+        "id": "project",
+        "type": "project",
+        "propKey": "",
+        "name": "所属项目",
+        "enabled": true,
+        "align": "right"
+      },
+      {
+        "id": "progress",
+        "type": "progress",
+        "propKey": "",
+        "name": "任务进度",
+        "enabled": true,
+        "align": "right"
+      }
+    ],
+    "执行进度": [
+      {
+        "id": "order",
+        "type": "order",
+        "propKey": "",
+        "name": "任务阶段(简写)",
+        "enabled": false,
+        "align": "left"
+      },
+      {
+        "id": "ctime",
+        "type": "ctime",
+        "propKey": "",
+        "name": "创建时间",
+        "enabled": false,
+        "align": "left"
+      }
+    ]
+  },
+  "pinnedMetaConfigs": {
+    "任务执行情况": [
+      {
+        "id": "order",
+        "type": "order",
+        "propKey": "",
+        "name": "任务阶段(简写)",
+        "enabled": true,
+        "align": "left"
+      },
+      {
+        "id": "ctime",
+        "type": "ctime",
+        "propKey": "",
+        "name": "创建时间",
+        "enabled": true,
+        "align": "left"
+      },
+      {
+        "id": "project",
+        "type": "project",
+        "propKey": "",
+        "name": "所属项目",
+        "enabled": true,
+        "align": "right"
+      }
+    ],
+    "任务所属项目": [
+      {
+        "id": "order",
+        "type": "order",
+        "propKey": "",
+        "name": "任务阶段(简写)",
+        "enabled": true,
+        "align": "left"
+      },
+      {
+        "id": "ctime",
+        "type": "ctime",
+        "propKey": "",
+        "name": "创建时间",
+        "enabled": true,
+        "align": "left"
+      },
+      {
+        "id": "project",
+        "type": "project",
+        "propKey": "",
+        "name": "所属项目",
+        "enabled": true,
+        "align": "right"
+      }
+    ],
+    "任务阶段": [
+      {
+        "id": "order",
+        "type": "order",
+        "propKey": "",
+        "name": "任务阶段(简写)",
+        "enabled": true,
+        "align": "left"
+      },
+      {
+        "id": "ctime",
+        "type": "ctime",
+        "propKey": "",
+        "name": "创建时间",
+        "enabled": true,
+        "align": "left"
+      },
+      {
+        "id": "project",
+        "type": "project",
+        "propKey": "",
+        "name": "所属项目",
+        "enabled": true,
+        "align": "right"
+      }
+    ],
+    "执行进度": [
+      {
+        "id": "order",
+        "type": "order",
+        "propKey": "",
+        "name": "任务阶段(简写)",
+        "enabled": true,
+        "align": "left"
+      },
+      {
+        "id": "ctime",
+        "type": "ctime",
+        "propKey": "",
+        "name": "创建时间",
+        "enabled": true,
+        "align": "left"
+      },
+      {
+        "id": "project",
+        "type": "project",
+        "propKey": "",
+        "name": "所属项目",
+        "enabled": true,
+        "align": "right"
+      }
+    ]
+  },
+  "globalMetaStyles": {
+    "order": {
+      "bgColor": "#e3e8f8",
+      "bgOpacity": 100,
+      "textColor": "#4a6eb8",
+      "fontSize": 11,
+      "fontWeight": "normal",
+      "borderColor": "transparent",
+      "borderWidth": 0,
+      "radius": 4,
+      "valueStyles": []
+    },
+    "ctime": {
+      "bgColor": "#e3e8f8",
+      "bgOpacity": 100,
+      "textColor": "#4a6eb8",
+      "fontSize": 11,
+      "fontWeight": "normal",
+      "borderColor": "transparent",
+      "borderWidth": 0,
+      "radius": 4,
+      "valueStyles": []
+    },
+    "project": {
+      "bgColor": "#e3e8f8",
+      "bgOpacity": 100,
+      "textColor": "#4a6eb8",
+      "fontSize": 11,
+      "fontWeight": "normal",
+      "borderColor": "transparent",
+      "borderWidth": 0,
+      "radius": 4,
+      "valueStyles": []
+    },
+    "progress": {
+      "bgColor": "#e3e8f8",
+      "bgOpacity": 100,
+      "textColor": "#4a6eb8",
+      "fontSize": 11,
+      "fontWeight": "normal",
+      "borderColor": "transparent",
+      "borderWidth": 0,
+      "radius": 4,
+      "valueStyles": []
+    },
+    "任务所属项目": {
+      "bgColor": "#e3e8f8",
+      "bgOpacity": 100,
+      "textColor": "#4a6eb8",
+      "fontSize": 11,
+      "fontWeight": "normal",
+      "borderColor": "transparent",
+      "borderWidth": 0,
+      "radius": 4,
+      "valueStyles": []
+    },
+    "任务优先程度": {
+      "bgColor": "#e3e8f8",
+      "bgOpacity": 100,
+      "textColor": "#4a6eb8",
+      "fontSize": 11,
+      "fontWeight": "normal",
+      "borderColor": "transparent",
+      "borderWidth": 0,
+      "radius": 4,
+      "valueStyles": []
+    }
+  },
+  "boardWrap": false,
+  "stageValueTemplate": "{value}-{order}"
+}
