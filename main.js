@@ -4268,6 +4268,10 @@ ${vcBody}` : fm;
             const isMultiDrag = draggedId && this.selectedCards.has(draggedId) && this.selectedCards.size > 1;
             const w = item.offsetWidth;
             const h = item.offsetHeight;
+            item.style.opacity = "1";
+            this.boardEl.querySelectorAll(".kanban-card").forEach((el) => {
+              el.style.opacity = "1";
+            });
             if (_multiFloatEl && _multiFloatEl.parentNode)
               _multiFloatEl.parentNode.removeChild(_multiFloatEl);
             _multiFloatEl = null;

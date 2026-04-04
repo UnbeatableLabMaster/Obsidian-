@@ -918,6 +918,12 @@ class KanbanView extends BasesView {
                     const w = item.offsetWidth;
                     const h = item.offsetHeight;
 
+                    // ✅ v1.0.1-beta: 立即强制移除 SortableJS 添加的内联透明度样式
+                    item.style.opacity = '1';
+                    this.boardEl.querySelectorAll('.kanban-card').forEach((el: Element) => {
+                        (el as HTMLElement).style.opacity = '1';
+                    });
+
                     // 清理上次残留的浮动层（防御性）
                     if (_multiFloatEl && _multiFloatEl.parentNode) _multiFloatEl.parentNode.removeChild(_multiFloatEl);
                     _multiFloatEl = null;
