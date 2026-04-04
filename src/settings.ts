@@ -31,10 +31,29 @@ export interface ViewConfig {
   icon?: string;
 }
 
+/** v1.0.3: 子视图 —— 视图组内的单个看板视图 */
+export interface SubView {
+  id: string;
+  name: string;
+  groupByProperty: string;
+}
+
+/** v1.0.3: 视图组 —— 对应 bases 侧边栏的一个视图入口，内含多个子视图 */
+export interface ViewGroup {
+  id: string;
+  name: string;
+  views: SubView[];
+  currentSubViewId: string;
+}
+
 export interface PluginSettings {
   defaultGroupBy: string;
 
-  // ── v1.0.2: 视图切换 ──
+  // ── v1.0.3: 视图组管理 ──
+  viewGroups: ViewGroup[];
+  currentGroupId: string;
+
+  // ── v1.0.2: 视图切换（保留，兼容旧数据迁移）──
   savedViews: ViewConfig[];
   currentViewId: string;
 
@@ -111,6 +130,20 @@ export interface PluginSettings {
 
 export const DEFAULT_SETTINGS: PluginSettings = {
   defaultGroupBy: "status",
+
+  viewGroups: [
+    {
+      id: "group-1",
+      name: "任务管理",
+      currentSubViewId: "sub-1",
+      views: [
+        { id: "sub-1", name: "任务状态", groupByProperty: "status" },
+        { id: "sub-2", name: "任务进度", groupByProperty: "任务执行情况" },
+        { id: "sub-3", name: "所属项目", groupByProperty: "任务所属项目" }
+      ]
+    }
+  ],
+  currentGroupId: "group-1",
 
   savedViews: [
     { id: "view-1", name: "任务状态", groupByProperty: "status" },

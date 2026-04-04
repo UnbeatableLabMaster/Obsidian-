@@ -280,7 +280,7 @@ class ConfirmModal extends Modal {
 }
 
 /* ========================================================= */
-/* 🌟 v1.0.2: 视图管理弹窗 */
+/* 🌟 v1.0.3: 视图组管理弹窗 */
 /* ========================================================= */
 class ViewManagerModal extends Modal {
     constructor(app: App, private plugin: TaskKanbanPlugin, private onSave: () => void) { super(app); }
@@ -289,68 +289,92 @@ class ViewManagerModal extends Modal {
         const { contentEl } = this;
         contentEl.addClass("kanban-view-manager-modal");
         contentEl.createEl("h2", { text: "视图管理" });
-        contentEl.createEl("p", { text: "管理看板视图，每个视图对应不同的分组属性", cls: "kanban-view-manager-desc" });
 
         const listContainer = contentEl.createDiv("kanban-view-manager-list");
 
         const renderList = () => {
             listContainer.empty();
 
-            this.plugin.settings.savedViews.forEach((view, index) => {
-                const row = listContainer.createDiv("kanban-view-manager-row");
+            this.plugin.settings.viewGroups.forEach((group, groupIndex) => {
+                const groupEl = listContainer.createDiv("kanban-view-group-block");
 
-                const handle = row.createDiv("kanban-view-manager-handle");
-                handle.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="5" r="1"></circle><circle cx="9" cy="19" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="15" cy="19" r="1"></circle></svg>`;
+                // 子视图配置区
+                const subSection = groupEl.createDiv("kanban-view-sub-section");
 
-                const content = row.createDiv("kanban-view-manager-content");
+                group.views.forEach((view) => {
+                    const row = subSection.createDiv("kanban-view-manager-row");
+                    row.dataset.id = view.id;
 
-                const nameInput = content.createEl("input", {
-                    type: "text",
-                    cls: "kanban-view-manager-input",
-                    placeholder: "视图名称"
+                    const handle = row.createDiv("kanban-view-manager-handle");
+                    handle.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="5" r="1"></circle><circle cx="9" cy="19" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="15" cy="19" r="1"></circle></svg>`;
+
+                    const content = row.createDiv("kanban-view-manager-content");
+
+                    // 子视图名称
+                    const nameLabel = content.createEl("span", { text: "子视图名称", cls: "kanban-view-field-label" });
+                    const nameInput = content.createEl("input", {
+                        type: "text",
+                        cls: "kanban-view-manager-input",
+                        placeholder: "子视图名称"
+                    });
+                    nameInput.value = view.name;
+                    nameInput.onchange = () => {
+                        const vi = this.plugin.settings.viewGroups[groupIndex].views.findIndex(v => v.id === view.id);
+                        if (vi !== -1) this.plugin.settings.viewGroups[groupIndex].views[vi].name = nameInput.value.trim() || view.name;
+                    };
+
+                    // 子视图分组依据
+                    const propLabel = content.createEl("span", { text: "分组依据", cls: "kanban-view-field-label" });
+                    const propInput = content.createEl("input", {
+                        type: "text",
+                        cls: "kanban-view-manager-input",
+                        placeholder: "分组属性"
+                    });
+                    propInput.value = view.groupByProperty;
+                    propInput.onchange = () => {
+                        const vi = this.plugin.settings.viewGroups[groupIndex].views.findIndex(v => v.id === view.id);
+                        if (vi !== -1) this.plugin.settings.viewGroups[groupIndex].views[vi].groupByProperty = propInput.value.trim();
+                    };
+
+                    const actions = row.createDiv("kanban-view-manager-actions");
+                    const deleteBtn = actions.createDiv("kanban-view-manager-btn kanban-view-manager-delete");
+                    deleteBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+                    deleteBtn.onclick = () => {
+                        if (this.plugin.settings.viewGroups[groupIndex].views.length <= 1) {
+                            new Notice("至少需要保留一个子视图");
+                            return;
+                        }
+                        const vi = this.plugin.settings.viewGroups[groupIndex].views.findIndex(v => v.id === view.id);
+                        if (vi !== -1) this.plugin.settings.viewGroups[groupIndex].views.splice(vi, 1);
+                        const g = this.plugin.settings.viewGroups[groupIndex];
+                        if (g.currentSubViewId === view.id) {
+                            g.currentSubViewId = g.views[0].id;
+                        }
+                        renderList();
+                    };
                 });
-                nameInput.value = view.name;
-                nameInput.onchange = () => {
-                    this.plugin.settings.savedViews[index].name = nameInput.value.trim() || `视图 ${index + 1}`;
-                };
 
-                const propInput = content.createEl("input", {
-                    type: "text",
-                    cls: "kanban-view-manager-input",
-                    placeholder: "分组属性"
+                new Sortable(subSection, {
+                    handle: ".kanban-view-manager-handle",
+                    animation: 150,
+                    onEnd: (evt: any) => {
+                        const moved = this.plugin.settings.viewGroups[groupIndex].views.splice(evt.oldIndex, 1)[0];
+                        this.plugin.settings.viewGroups[groupIndex].views.splice(evt.newIndex, 0, moved);
+                    }
                 });
-                propInput.value = view.groupByProperty;
-                propInput.onchange = () => {
-                    this.plugin.settings.savedViews[index].groupByProperty = propInput.value.trim();
-                };
 
-                const actions = row.createDiv("kanban-view-manager-actions");
-
-                const deleteBtn = actions.createDiv("kanban-view-manager-btn kanban-view-manager-delete");
-                deleteBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
-                deleteBtn.onclick = () => {
-                    if (this.plugin.settings.savedViews.length <= 1) {
-                        new Notice("至少需要保留一个视图");
-                        return;
-                    }
-                    this.plugin.settings.savedViews.splice(index, 1);
-                    if (this.plugin.settings.currentViewId === view.id) {
-                        this.plugin.settings.currentViewId = this.plugin.settings.savedViews[0].id;
-                    }
+                const addSubBtn = subSection.createEl("button", { text: "+ 新增子视图", cls: "kanban-view-manager-add-btn" });
+                addSubBtn.onclick = () => {
+                    const newId = `sub-${Date.now()}`;
+                    this.plugin.settings.viewGroups[groupIndex].views.push({
+                        id: newId,
+                        name: `子视图 ${group.views.length + 1}`,
+                        groupByProperty: "status"
+                    });
                     renderList();
                 };
             });
 
-            const addBtn = listContainer.createEl("button", { text: "+ 新增视图", cls: "kanban-view-manager-add-btn" });
-            addBtn.onclick = () => {
-                const newId = `view-${Date.now()}`;
-                this.plugin.settings.savedViews.push({
-                    id: newId,
-                    name: `视图 ${this.plugin.settings.savedViews.length + 1}`,
-                    groupByProperty: "status"
-                });
-                renderList();
-            };
         };
 
         renderList();
@@ -388,7 +412,7 @@ class KanbanView extends BasesView {
 
   constructor(controller: any, scrollEl: HTMLElement, plugin: TaskKanbanPlugin) { super(controller); this.plugin = plugin; this.containerEl = scrollEl.createDiv("kanban-view-container"); }
 
-  requestUpdate() { if (this._updateTimer) clearTimeout(this._updateTimer); this._updateTimer = setTimeout(() => this.onDataUpdated(), 200); }
+  requestUpdate() { if (this._updateTimer) clearTimeout(this._updateTimer); this._updateTimer = setTimeout(() => this.onDataUpdated(), 0); }
 
   // 提取项目环节的中间部分（所属项目）
   private extractMiddlePart(fullValue: string, orderPrefix: string, orderSeparator: string): string {
@@ -446,7 +470,15 @@ class KanbanView extends BasesView {
         });
 
         const entries = (this as any).data?.data || [];
-        const groupByProp = getRealProp((this as any).config?.getAsPropertyId("groupByProperty") || this.plugin.settings.defaultGroupBy);
+        // ✅ v1.0.3: 优先从视图组/子视图设置读取 groupByProperty，不依赖 bases config（会被框架重置）
+        const _activeGroup = this.plugin.settings.viewGroups?.find(g => g.id === this.plugin.settings.currentGroupId)
+            || this.plugin.settings.viewGroups?.[0];
+        const _activeSubView = _activeGroup?.views.find(v => v.id === _activeGroup.currentSubViewId)
+            || _activeGroup?.views[0];
+        const groupByProp = getRealProp(
+            _activeSubView?.groupByProperty
+            || this.plugin.settings.defaultGroupBy
+        );
 
         const settings = this.plugin.settings || DEFAULT_SETTINGS;
         const orderProp = settings.defaultOrderProperty || "kanban-order";
@@ -536,10 +568,11 @@ class KanbanView extends BasesView {
 
         const toolbarEl = this.containerEl.createDiv("kanban-toolbar");
 
-        // ✅ v1.0.2: 视图切换器
+        // ✅ v1.0.3: 视图切换器（基于视图组/子视图）
         const viewSwitcher = toolbarEl.createDiv("kanban-view-switcher");
-        const currentView = settings.savedViews.find(v => v.id === settings.currentViewId) || settings.savedViews[0];
-        const currentGroupBy = getRealProp((this as any).config?.getAsPropertyId("groupByProperty") || currentView?.groupByProperty || this.plugin.settings.defaultGroupBy);
+        const currentGroup = settings.viewGroups?.find(g => g.id === settings.currentGroupId) || settings.viewGroups?.[0];
+        const currentSubView = currentGroup?.views.find(v => v.id === currentGroup.currentSubViewId) || currentGroup?.views[0];
+        const currentGroupBy = getRealProp(currentSubView?.groupByProperty || this.plugin.settings.defaultGroupBy);
 
         const switcherBtn = viewSwitcher.createDiv("kanban-view-switcher-btn");
         switcherBtn.innerHTML = `
@@ -549,7 +582,7 @@ class KanbanView extends BasesView {
                 <rect x="14" y="14" width="7" height="7"></rect>
                 <rect x="3" y="14" width="7" height="7"></rect>
             </svg>
-            <span class="kanban-view-switcher-label">${currentView?.name || '默认视图'}</span>
+            <span class="kanban-view-switcher-label">${currentSubView?.name || currentGroup?.name || '默认视图'}</span>
             <svg class="kanban-view-switcher-arrow" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
                 <polyline points="6 9 12 15 18 9"></polyline>
             </svg>
@@ -560,18 +593,20 @@ class KanbanView extends BasesView {
             e.stopPropagation();
             const menu = new Menu();
 
-            settings.savedViews.forEach(view => {
-                menu.addItem((item: any) => {
-                    item.setTitle(view.name);
-                    if (view.id === settings.currentViewId) {
-                        item.setIcon("check");
-                    }
-                    item.onClick(async () => {
-                        this.plugin.settings.currentViewId = view.id;
-                        // 更新当前视图的 groupByProperty
-                        (this as any).config?.setProperty("groupByProperty", view.groupByProperty);
-                        await this.plugin.saveSettings(false);
-                        this.requestUpdate();
+            (settings.viewGroups || []).forEach(group => {
+                group.views.forEach(view => {
+                    menu.addItem((item: any) => {
+                        item.setTitle(view.name);
+                        if (group.id === settings.currentGroupId && view.id === group.currentSubViewId) {
+                            item.setIcon("check");
+                        }
+                        item.onClick(async () => {
+                            this.plugin.settings.currentGroupId = group.id;
+                            const g = this.plugin.settings.viewGroups.find(g => g.id === group.id);
+                            if (g) g.currentSubViewId = view.id;
+                            this.requestUpdate();
+                            this.plugin.saveSettings(false);
+                        });
                     });
                 });
             });
@@ -579,7 +614,7 @@ class KanbanView extends BasesView {
             menu.addSeparator();
 
             menu.addItem((item: any) => {
-                item.setTitle("管理视图...");
+                item.setTitle("管理视图组...");
                 item.setIcon("settings");
                 item.onClick(() => {
                     new ViewManagerModal(this.app, this.plugin, () => {
@@ -1360,7 +1395,11 @@ class KanbanView extends BasesView {
                 const progressWrapper = headerEl.createDiv("kanban-column-progress-wrapper"); const progressBg = progressWrapper.createDiv("kanban-column-progress-bg"); const progressFill = progressBg.createDiv("kanban-column-progress-fill");
                 // ✅ v1.0.15: 兼容新进度条配置——animated 旧值或直接为动画类型名时均添加 is-animated
                 if (pBarDisplay === "animated" || (pBarDisplay !== "simple" && pBarDisplay !== "none")) progressFill.addClass("is-animated");
-                const initPercent = allCards.length === 0 ? 0 : Math.round((compCount / allCards.length) * 100); progressFill.style.width = `${initPercent}%`;
+                const initPercent = allCards.length === 0 ? 0 : Math.round((compCount / allCards.length) * 100);
+                progressFill.style.transition = 'none';
+                progressFill.style.width = `${initPercent}%`;
+                progressFill.getBoundingClientRect();
+                progressFill.style.transition = '';
             }
 
             const drawerWrap = headerEl.createDiv("kanban-column-drawer-wrap");
@@ -1531,7 +1570,7 @@ class KanbanView extends BasesView {
         this.isRendering = false;
     }
   }
-  static getViewOptions() { return [{ displayName: "分组依据", type: "property", key: "groupByProperty", filter: (prop: string) => !prop.startsWith("file."), placeholder: "选择属性" }]; }
+  static getViewOptions() { return []; }
 }
 
 export default class TaskKanbanPlugin extends Plugin {
@@ -1548,17 +1587,33 @@ export default class TaskKanbanPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
 
-    // ✅ v1.0.2: 初始化视图配置
-    if (!this.settings.savedViews || this.settings.savedViews.length === 0) {
-      this.settings.savedViews = [
-        { id: "view-1", name: "任务状态", groupByProperty: "status" },
-        { id: "view-2", name: "任务进度", groupByProperty: this.settings.progressProperty || "任务执行情况" },
-        { id: "view-3", name: "所属项目", groupByProperty: this.settings.projectProperty || "任务所属项目" }
+    // ✅ v1.0.3: 初始化/迁移视图组配置
+    if (!this.settings.viewGroups || this.settings.viewGroups.length === 0) {
+      // 从旧 savedViews 迁移
+      const oldViews = this.settings.savedViews;
+      const migratedSubViews = (oldViews && oldViews.length > 0) ? oldViews.map(v => ({
+        id: v.id, name: v.name, groupByProperty: v.groupByProperty
+      })) : [
+        { id: "sub-1", name: "任务状态", groupByProperty: "status" },
+        { id: "sub-2", name: "任务进度", groupByProperty: this.settings.progressProperty || "任务执行情况" },
+        { id: "sub-3", name: "所属项目", groupByProperty: this.settings.projectProperty || "任务所属项目" }
       ];
+      this.settings.viewGroups = [{
+        id: "group-1",
+        name: "任务管理",
+        currentSubViewId: migratedSubViews[0].id,
+        views: migratedSubViews
+      }];
     }
-    if (!this.settings.currentViewId) {
-      this.settings.currentViewId = this.settings.savedViews[0]?.id || "view-1";
+    if (!this.settings.currentGroupId) {
+      this.settings.currentGroupId = this.settings.viewGroups[0]?.id || "group-1";
     }
+    // 确保每个视图组有有效的 currentSubViewId
+    this.settings.viewGroups.forEach(g => {
+      if (!g.currentSubViewId || !g.views.find(v => v.id === g.currentSubViewId)) {
+        g.currentSubViewId = g.views[0]?.id || "";
+      }
+    });
 
     if (!this.settings.globalMetaStyles) this.settings.globalMetaStyles = {};
     if (!this.settings.pinnedMetaConfigs) this.settings.pinnedMetaConfigs = {};
