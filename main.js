@@ -4290,29 +4290,33 @@ ${vcBody}` : fm;
                 "pointer-events:none",
                 "z-index:10000",
                 "transform:translate(-9999px,-9999px)",
-                "transition:opacity 0.3s ease"
+                "transition:opacity 0.3s ease",
+                "will-change:transform"
               ].join(";");
               const nonTopEls = selectedEls.filter((el) => el.dataset.id !== topId);
               const topEl = selectedEls.find((el) => el.dataset.id === topId) || item;
-              nonTopEls.forEach((_, i) => {
+              const topRect = topEl.getBoundingClientRect();
+              nonTopEls.forEach((srcEl, i) => {
                 const back = document.createElement("div");
-                const center = (nonTopEls.length - 1) / 2;
-                const initDeg = (i - center) * 14;
-                const initTx = (i - center) * 10;
+                const srcRect = srcEl.getBoundingClientRect();
+                const initDy = srcRect.top - topRect.top;
+                const initDx = srcRect.left - topRect.left;
+                const backZ = count - 1 - i;
                 back.style.cssText = [
                   `width:${w}px`,
                   `height:${h}px`,
                   "position:absolute",
                   "top:0",
                   "left:0",
-                  "background:var(--background-secondary)",
+                  "background:var(--background-primary)",
                   "border:2px solid var(--interactive-accent)",
-                  `box-shadow:0 ${4 + i * 2}px ${10 + i * 2}px rgba(0,0,0,0.15)`,
+                  `box-shadow:0 ${2 + i}px ${6 + i * 2}px rgba(0,0,0,0.12)`,
                   "border-radius:6px",
                   "box-sizing:border-box",
-                  `transform:rotate(${initDeg}deg) translateX(${initTx}px)`,
-                  "transition:transform 0.32s cubic-bezier(0.22,1,0.36,1)",
-                  `z-index:${i}`
+                  // 初始从真实位置出发（无动画，第一帧立刻就位）
+                  `transform:translate(${initDx}px,${initDy}px)`,
+                  "transition:none",
+                  `z-index:${backZ}`
                 ].join(";");
                 floatEl.appendChild(back);
               });
@@ -4330,8 +4334,8 @@ ${vcBody}` : fm;
                 "box-sizing:border-box",
                 "overflow:hidden",
                 `z-index:${count}`,
-                "transform:rotate(2deg)",
-                "transition:transform 0.32s cubic-bezier(0.22,1,0.36,1)"
+                "transform:translateY(0)",
+                "transition:none"
               ].join(";");
               floatEl.appendChild(topClone);
               const badge = document.createElement("div");
@@ -4357,30 +4361,44 @@ ${vcBody}` : fm;
               document.body.appendChild(floatEl);
               _multiFloatEl = floatEl;
               requestAnimationFrame(() => {
+                const currentTopRect = topEl.getBoundingClientRect();
+                floatEl.style.transform = `translate(${currentTopRect.left}px,${currentTopRect.top}px)`;
                 requestAnimationFrame(() => {
                   const children = Array.from(floatEl.children);
                   const backs = children.slice(0, children.length - 2);
                   backs.forEach((back, i) => {
-                    const center = (backs.length - 1) / 2;
-                    back.style.transform = `rotate(${(i - center) * 1.5}deg) translate(${(i - center) * 2}px, 0)`;
+                    const stackDy = (i + 1) * 5;
+                    back.style.transition = `transform ${0.36 + i * 0.04}s cubic-bezier(0.175,0.885,0.32,1.275)`;
+                    back.style.transform = `translateY(${stackDy}px)`;
                   });
                   const topCard = children[children.length - 2];
-                  if (topCard)
-                    topCard.style.transform = "rotate(2deg) translateY(0)";
+                  if (topCard) {
+                    topCard.style.transition = "transform 0.3s cubic-bezier(0.175,0.885,0.32,1.275)";
+                    topCard.style.transform = "translateY(-4px)";
+                  }
                 });
               });
+              let _rafPending = false;
+              let _lastDragX = 0, _lastDragY = 0;
               const onDragOver = (e) => {
                 e.preventDefault();
-                const x = e.clientX - _dragOffsetX;
-                const y = e.clientY - _dragOffsetY;
-                floatEl.style.transform = `translate(${x}px,${y}px)`;
+                _lastDragX = e.clientX - _dragOffsetX;
+                _lastDragY = e.clientY - _dragOffsetY;
+                if (_rafPending)
+                  return;
+                _rafPending = true;
+                requestAnimationFrame(() => {
+                  _rafPending = false;
+                  floatEl.style.transform = `translate(${_lastDragX}px,${_lastDragY}px)`;
+                });
               };
               document.addEventListener("dragover", onDragOver);
               selectedEls.forEach((el) => {
-                el.style.opacity = "0.2";
+                el.style.opacity = "0";
               });
               _multiFloatCleanup = () => {
                 document.removeEventListener("dragover", onDragOver);
+                _rafPending = false;
               };
               const transparentImg = document.createElement("canvas");
               transparentImg.width = 1;
@@ -4436,24 +4454,25 @@ ${vcBody}` : fm;
               const backs = children.slice(0, children.length - 2);
               const topCard = children[children.length - 2];
               backs.forEach((back, i) => {
-                const center = (backs.length - 1) / 2;
-                const finalDeg = (i - center) * 16;
-                const finalTx = (i - center) * 12;
-                back.style.transition = "transform 0.28s cubic-bezier(0.22,1,0.36,1)";
-                back.style.transform = `rotate(${finalDeg}deg) translateX(${finalTx}px)`;
+                const delay = i * 40;
+                const finalDy = 30 + i * 8;
+                back.style.transition = `transform 0.32s ${delay}ms cubic-bezier(0.22,1,0.36,1), opacity 0.25s ${delay + 60}ms ease`;
+                back.style.transform = `translate(0px,${finalDy}px)`;
+                back.style.opacity = "0";
               });
               if (topCard) {
-                topCard.style.transition = "transform 0.28s cubic-bezier(0.22,1,0.36,1)";
-                topCard.style.transform = "rotate(2deg) scale(1.04)";
+                topCard.style.transition = "transform 0.22s cubic-bezier(0.175,0.885,0.32,1.275)";
+                topCard.style.transform = "translateY(-6px) scale(1.02)";
               }
+              const fadeDelay = backs.length * 40 + 80;
               setTimeout(() => {
-                floatEl.style.transition = "opacity 0.22s ease";
+                floatEl.style.transition = "opacity 0.2s ease";
                 floatEl.style.opacity = "0";
-              }, 100);
+              }, fadeDelay);
               setTimeout(() => {
                 if (floatEl.parentNode)
                   floatEl.parentNode.removeChild(floatEl);
-              }, 340);
+              }, fadeDelay + 220);
               _multiFloatEl = null;
             }
             evt.item.style.opacity = "";
