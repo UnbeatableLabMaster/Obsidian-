@@ -3312,6 +3312,7 @@ var ConfirmModal = class extends import_obsidian2.Modal {
   }
 };
 var KanbanView = class extends BasesView2 {
+  // 保存拖拽前的原始顺序
   constructor(controller, scrollEl2, plugin) {
     super(controller);
     this.sortables = [];
@@ -3323,6 +3324,7 @@ var KanbanView = class extends BasesView2 {
     this._updateTimer = null;
     this.selectedCards = /* @__PURE__ */ new Set();
     this.lastSelectedCardId = null;
+    this._dragOriginalOrder = [];
     this.plugin = plugin;
     this.containerEl = scrollEl2.createDiv("kanban-view-container");
   }
@@ -4272,6 +4274,13 @@ ${vcBody}` : fm;
             this.boardEl.querySelectorAll(".kanban-card").forEach((el) => {
               el.style.opacity = "1";
             });
+            if (isMultiDrag) {
+              const fromContainer = evt.from;
+              const allCardsInFrom = Array.from(fromContainer.querySelectorAll(".kanban-card"));
+              this._dragOriginalOrder = allCardsInFrom.filter((el) => this.selectedCards.has(el.dataset.id)).map((el) => el.dataset.id);
+            } else {
+              this._dragOriginalOrder = [];
+            }
             if (_multiFloatEl && _multiFloatEl.parentNode)
               _multiFloatEl.parentNode.removeChild(_multiFloatEl);
             _multiFloatEl = null;
@@ -4495,19 +4504,20 @@ ${vcBody}` : fm;
               evt.item.removeClass("is-pinned");
             let settingsNeedSave = false;
             if (activeIds.length > 1) {
-              const fromContainer = evt.from;
-              const allCardsInFrom = Array.from(fromContainer.querySelectorAll(".kanban-card"));
-              const selectedInOriginalOrder = allCardsInFrom.filter((el) => activeIds.includes(el.dataset.id));
               const toContainer = evt.to;
               const refNode = evt.item.nextSibling;
-              for (const el of selectedInOriginalOrder) {
-                if (el.dataset.id === draggedId)
+              for (const id of this._dragOriginalOrder) {
+                if (id === draggedId)
                   continue;
-                if (refNode)
-                  toContainer.insertBefore(el, refNode);
-                else
-                  toContainer.appendChild(el);
+                const el = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`);
+                if (el) {
+                  if (refNode)
+                    toContainer.insertBefore(el, refNode);
+                  else
+                    toContainer.appendChild(el);
+                }
               }
+              this._dragOriginalOrder = [];
             }
             for (const id of activeIds) {
               const el = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`);

@@ -328,13 +328,13 @@
 }
 
 /* 拖拽中的卡片样式 */
-/* ✅ v1.0.1-beta: 移除拖拽时的透明化效果，保持卡片原样式 */
+/* ✅ v1.0.1-beta: 强制移除拖拽时的透明化效果，使用 !important 覆盖内联样式 */
 .kanban-card-chosen {
-    /* opacity: 0.4 !important; */
+    opacity: 1 !important;
 }
 
 .kanban-card-dragging {
-    /* opacity: 0 !important; */
+    opacity: 1 !important;
 }
 
 /* ✅ v1.0.11: 拖拽时其他卡片/列表保持原样，不变淡 */

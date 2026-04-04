@@ -294,6 +294,7 @@ class KanbanView extends BasesView {
 
   selectedCards: Set<string> = new Set();
   lastSelectedCardId: string | null = null;
+  private _dragOriginalOrder: string[] = []; // 保存拖拽前的原始顺序
 
   constructor(controller: any, scrollEl: HTMLElement, plugin: TaskKanbanPlugin) { super(controller); this.plugin = plugin; this.containerEl = scrollEl.createDiv("kanban-view-container"); }
 
@@ -924,6 +925,17 @@ class KanbanView extends BasesView {
                         (el as HTMLElement).style.opacity = '1';
                     });
 
+                    // ✅ v1.0.1-beta: 保存多选卡片的原始顺序（在拖拽前）
+                    if (isMultiDrag) {
+                        const fromContainer = evt.from;
+                        const allCardsInFrom = Array.from(fromContainer.querySelectorAll('.kanban-card')) as HTMLElement[];
+                        this._dragOriginalOrder = allCardsInFrom
+                            .filter(el => this.selectedCards.has(el.dataset.id!))
+                            .map(el => el.dataset.id!);
+                    } else {
+                        this._dragOriginalOrder = [];
+                    }
+
                     // 清理上次残留的浮动层（防御性）
                     if (_multiFloatEl && _multiFloatEl.parentNode) _multiFloatEl.parentNode.removeChild(_multiFloatEl);
                     _multiFloatEl = null;
@@ -1167,23 +1179,20 @@ class KanbanView extends BasesView {
                     if (isToPinned && !isFromPinned) evt.item.addClass("is-pinned"); else if (!isToPinned && isFromPinned) evt.item.removeClass("is-pinned");
                     let settingsNeedSave = false;
                     if (activeIds.length > 1) {
-                        // ✅ v1.0.1-beta: 保持多选卡片拖拽前的原始顺序，不重新排列
-                        // 收集拖拽前的原始顺序（从源容器中的位置）
-                        const fromContainer = evt.from;
-                        const allCardsInFrom = Array.from(fromContainer.querySelectorAll('.kanban-card')) as HTMLElement[];
-                        const selectedInOriginalOrder = allCardsInFrom.filter(el => activeIds.includes(el.dataset.id!));
-
-                        // 按原始顺序插入到目标位置
+                        // ✅ v1.0.1-beta: 使用拖拽前保存的原始顺序插入卡片
                         const toContainer = evt.to;
                         const refNode = evt.item.nextSibling;
 
-                        // 先移除被拖拽的主卡片（evt.item），因为它已经被 SortableJS 放置好了
-                        // 然后按原始顺序插入其他选中的卡片
-                        for (const el of selectedInOriginalOrder) {
-                            if (el.dataset.id === draggedId) continue; // 跳过主卡片
-                            if (refNode) toContainer.insertBefore(el, refNode);
-                            else toContainer.appendChild(el);
+                        // 按原始顺序插入其他选中的卡片
+                        for (const id of this._dragOriginalOrder) {
+                            if (id === draggedId) continue; // 跳过主卡片
+                            const el = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`) as HTMLElement;
+                            if (el) {
+                                if (refNode) toContainer.insertBefore(el, refNode);
+                                else toContainer.appendChild(el);
+                            }
                         }
+                        this._dragOriginalOrder = []; // 清空
                     }
                     for (const id of activeIds) {
                         const el = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id as string)}"]`) as HTMLElement; if (!el) continue;
