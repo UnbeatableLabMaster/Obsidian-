@@ -24,8 +24,19 @@ export interface MetaTagConfig {
   propKey: string; name: string; enabled: boolean; align: 'left' | 'right';
 }
 
+export interface ViewConfig {
+  id: string;
+  name: string;
+  groupByProperty: string;
+  icon?: string;
+}
+
 export interface PluginSettings {
   defaultGroupBy: string;
+
+  // ── v1.0.2: 视图切换 ──
+  savedViews: ViewConfig[];
+  currentViewId: string;
 
   // ── 操作交互 ──
   dragLocked: boolean;
@@ -100,6 +111,13 @@ export interface PluginSettings {
 
 export const DEFAULT_SETTINGS: PluginSettings = {
   defaultGroupBy: "status",
+
+  savedViews: [
+    { id: "view-1", name: "任务状态", groupByProperty: "status" },
+    { id: "view-2", name: "任务进度", groupByProperty: "任务执行情况" },
+    { id: "view-3", name: "所属项目", groupByProperty: "任务所属项目" }
+  ],
+  currentViewId: "view-1",
 
   dragLocked: false,
   dragDelay: 50,

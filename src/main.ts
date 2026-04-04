@@ -279,6 +279,96 @@ class ConfirmModal extends Modal {
     onClose() { this.contentEl.empty(); }
 }
 
+/* ========================================================= */
+/* 🌟 v1.0.2: 视图管理弹窗 */
+/* ========================================================= */
+class ViewManagerModal extends Modal {
+    constructor(app: App, private plugin: TaskKanbanPlugin, private onSave: () => void) { super(app); }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.addClass("kanban-view-manager-modal");
+        contentEl.createEl("h2", { text: "视图管理" });
+        contentEl.createEl("p", { text: "管理看板视图，每个视图对应不同的分组属性", cls: "kanban-view-manager-desc" });
+
+        const listContainer = contentEl.createDiv("kanban-view-manager-list");
+
+        const renderList = () => {
+            listContainer.empty();
+
+            this.plugin.settings.savedViews.forEach((view, index) => {
+                const row = listContainer.createDiv("kanban-view-manager-row");
+
+                const handle = row.createDiv("kanban-view-manager-handle");
+                handle.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="5" r="1"></circle><circle cx="9" cy="19" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="15" cy="19" r="1"></circle></svg>`;
+
+                const content = row.createDiv("kanban-view-manager-content");
+
+                const nameInput = content.createEl("input", {
+                    type: "text",
+                    cls: "kanban-view-manager-input",
+                    placeholder: "视图名称"
+                });
+                nameInput.value = view.name;
+                nameInput.onchange = () => {
+                    this.plugin.settings.savedViews[index].name = nameInput.value.trim() || `视图 ${index + 1}`;
+                };
+
+                const propInput = content.createEl("input", {
+                    type: "text",
+                    cls: "kanban-view-manager-input",
+                    placeholder: "分组属性"
+                });
+                propInput.value = view.groupByProperty;
+                propInput.onchange = () => {
+                    this.plugin.settings.savedViews[index].groupByProperty = propInput.value.trim();
+                };
+
+                const actions = row.createDiv("kanban-view-manager-actions");
+
+                const deleteBtn = actions.createDiv("kanban-view-manager-btn kanban-view-manager-delete");
+                deleteBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+                deleteBtn.onclick = () => {
+                    if (this.plugin.settings.savedViews.length <= 1) {
+                        new Notice("至少需要保留一个视图");
+                        return;
+                    }
+                    this.plugin.settings.savedViews.splice(index, 1);
+                    if (this.plugin.settings.currentViewId === view.id) {
+                        this.plugin.settings.currentViewId = this.plugin.settings.savedViews[0].id;
+                    }
+                    renderList();
+                };
+            });
+
+            const addBtn = listContainer.createEl("button", { text: "+ 新增视图", cls: "kanban-view-manager-add-btn" });
+            addBtn.onclick = () => {
+                const newId = `view-${Date.now()}`;
+                this.plugin.settings.savedViews.push({
+                    id: newId,
+                    name: `视图 ${this.plugin.settings.savedViews.length + 1}`,
+                    groupByProperty: "status"
+                });
+                renderList();
+            };
+        };
+
+        renderList();
+
+        const btnGroup = contentEl.createDiv("kanban-modal-btns");
+        const cancelBtn = btnGroup.createEl("button", { text: "取消" });
+        cancelBtn.onclick = () => this.close();
+        const saveBtn = btnGroup.createEl("button", { text: "保存", cls: "mod-cta" });
+        saveBtn.onclick = async () => {
+            await this.plugin.saveSettings(false);
+            this.onSave();
+            this.close();
+        };
+    }
+
+    onClose() { this.contentEl.empty(); }
+}
+
 interface CardData {
     type: 'file' | 'virtual'; id: string; title: string; column: string; order: string; pinnedOrder: string;
     isCompleted: boolean; isPinned: boolean; ctime: number; projectValStr: string; progressValStr: string;
@@ -445,7 +535,62 @@ class KanbanView extends BasesView {
         };
 
         const toolbarEl = this.containerEl.createDiv("kanban-toolbar");
-        // toolbarEl.createDiv({ cls: "kanban-prop-info", text: `🗂️ 分组：[ ${yamlGroupProp} ] | 项目：[ ${yamlOrderProp} ]` });
+
+        // ✅ v1.0.2: 视图切换器
+        const viewSwitcher = toolbarEl.createDiv("kanban-view-switcher");
+        const currentView = settings.savedViews.find(v => v.id === settings.currentViewId) || settings.savedViews[0];
+        const currentGroupBy = getRealProp((this as any).config?.getAsPropertyId("groupByProperty") || currentView?.groupByProperty || this.plugin.settings.defaultGroupBy);
+
+        const switcherBtn = viewSwitcher.createDiv("kanban-view-switcher-btn");
+        switcherBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none">
+                <rect x="3" y="3" width="7" height="7"></rect>
+                <rect x="14" y="3" width="7" height="7"></rect>
+                <rect x="14" y="14" width="7" height="7"></rect>
+                <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <span class="kanban-view-switcher-label">${currentView?.name || '默认视图'}</span>
+            <svg class="kanban-view-switcher-arrow" viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+                <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+        `;
+        addTooltip(switcherBtn, "切换视图：在不同的分组方式之间快速切换", 50);
+
+        switcherBtn.onclick = (e: MouseEvent) => {
+            e.stopPropagation();
+            const menu = new Menu();
+
+            settings.savedViews.forEach(view => {
+                menu.addItem((item: any) => {
+                    item.setTitle(view.name);
+                    if (view.id === settings.currentViewId) {
+                        item.setIcon("check");
+                    }
+                    item.onClick(async () => {
+                        this.plugin.settings.currentViewId = view.id;
+                        // 更新当前视图的 groupByProperty
+                        (this as any).config?.setProperty("groupByProperty", view.groupByProperty);
+                        await this.plugin.saveSettings(false);
+                        this.requestUpdate();
+                    });
+                });
+            });
+
+            menu.addSeparator();
+
+            menu.addItem((item: any) => {
+                item.setTitle("管理视图...");
+                item.setIcon("settings");
+                item.onClick(() => {
+                    new ViewManagerModal(this.app, this.plugin, () => {
+                        this.requestUpdate();
+                    }).open();
+                });
+            });
+
+            menu.showAtMouseEvent(e);
+        };
+
         const toolbarActions = toolbarEl.createDiv("kanban-toolbar-actions");
 
         const globalAutoNumBtn = toolbarActions.createDiv("kanban-toolbar-btn");
@@ -875,29 +1020,15 @@ class KanbanView extends BasesView {
             cardEl.onkeydown = (e: KeyboardEvent) => { if ((e.key === " " || e.key === "Enter") && document.activeElement !== cardTitleEl && card.type === 'file') { e.preventDefault(); checkbox.checked = !checkbox.checked; checkbox.dispatchEvent(new Event("change")); } };
         };
 
-        // ✅ v1.0.1: 在 boardEl 捕获阶段记录 mousedown 时的精确偏移
-        let _dragOffsetX = 8;
-        let _dragOffsetY = 8;
-
-        this.boardEl.addEventListener('mousedown', (e: MouseEvent) => {
-            const card = (e.target as HTMLElement).closest('.kanban-card') as HTMLElement | null;
-            if (!card) return;
-            const rect = card.getBoundingClientRect();
-            _dragOffsetX = Math.round(e.clientX - rect.left);
-            _dragOffsetY = Math.round(e.clientY - rect.top);
-        }, true);
-
-        // ✅ v1.0.1: 多选拖拽跟随鼠标的浮动层 — 整个看板共用一个实例
-        let _multiFloatEl: HTMLElement | null = null;
-        let _multiFloatCleanup: (() => void) | null = null;
-
         const initSortable = (container: HTMLElement) => {
             const sortable = new Sortable(container, {
                 group: 'shared',
                 animation: settings.animationDuration,
                 easing: easingCurve,
-                // ✅ v1.0.1-beta: 使用原生 HTML5 拖拽，配合自定义浮动层实现流畅拖动
-                forceFallback: false,
+                // ✅ v1.0.3: 使用 fallback 模式 + 自定义 setData 完全控制拖拽视觉
+                forceFallback: true,
+                fallbackTolerance: 3,
+                fallbackClass: 'kanban-card-fallback',
                 scroll: true,
                 scrollSensitivity: 80,
                 scrollSpeed: 15,
@@ -907,22 +1038,19 @@ class KanbanView extends BasesView {
                 delayOnTouchOnly: false,
                 disabled: isDragLocked,
                 ghostClass: 'kanban-card-ghost',
-                // ✅ v1.0.1-beta: 禁用 chosenClass 和 dragClass，防止 SortableJS 添加透明度样式
-                chosenClass: '',
-                dragClass: '',
+                chosenClass: 'kanban-card-chosen-custom',
+                dragClass: 'kanban-card-drag-custom',
+                // ✅ v1.0.3: 自定义 fallback 元素的创建
+                setData: function(dataTransfer: any, dragEl: HTMLElement) {
+                    // 阻止默认行为，我们完全自定义 fallback
+                },
                 onStart: (evt: any) => {
                     this.boardEl.addClass("is-dragging-card");
                     const item = evt.item as HTMLElement;
-
                     const draggedId = item.dataset.id;
                     const isMultiDrag = draggedId && this.selectedCards.has(draggedId) && this.selectedCards.size > 1;
 
-                    const w = item.offsetWidth;
-                    const h = item.offsetHeight;
-
-                    // ✅ v1.0.1-beta: 移除 setInterval，改为禁用 chosenClass 和 dragClass
-
-                    // ✅ v1.0.1-beta: 保存多选卡片的原始顺序（在拖拽前）
+                    // 保存多选卡片的原始顺序
                     if (isMultiDrag) {
                         const fromContainer = evt.from;
                         const allCardsInFrom = Array.from(fromContainer.querySelectorAll('.kanban-card')) as HTMLElement[];
@@ -933,238 +1061,113 @@ class KanbanView extends BasesView {
                         this._dragOriginalOrder = [];
                     }
 
-                    // 清理上次残留的浮动层（防御性）
-                    if (_multiFloatEl && _multiFloatEl.parentNode) _multiFloatEl.parentNode.removeChild(_multiFloatEl);
-                    _multiFloatEl = null;
-                    if (_multiFloatCleanup) { _multiFloatCleanup(); _multiFloatCleanup = null; }
+                    // ✅ v1.0.3: 强制原始卡片保持完全不透明
+                    item.style.setProperty('opacity', '1', 'important');
 
-                    if (isMultiDrag) {
-                        // 按照 DOM 顺序收集选中的卡片元素
-                        const allDomCards = Array.from(this.boardEl.querySelectorAll('.kanban-card')) as HTMLElement[];
-                        const selectedEls = allDomCards.filter(el => this.selectedCards.has(el.dataset.id!));
-                        const count = selectedEls.length;
-                        // 最后一次被选中的卡片 id 为"顶层牌"，找不到则退回为被拖拽的卡片
-                        const topId = this.lastSelectedCardId && this.selectedCards.has(this.lastSelectedCardId)
-                            ? this.lastSelectedCardId : draggedId;
+                    // ✅ v1.0.3: 自定义 fallback 元素，整合堆叠效果
+                    // SortableJS 会在 onStart 后立即查找 .sortable-fallback 元素
+                    // 我们需要在下一帧修改它
+                    requestAnimationFrame(() => {
+                        const fallback = document.querySelector('.kanban-card-fallback') as HTMLElement;
+                        if (!fallback) return;
 
-                        // ① 创建跟随鼠标的浮动层
-                        //    ✅ v1.0.1-beta: 优化拖动流畅度 - 使用 GPU 加速和合成层优化
-                        const floatEl = document.createElement('div');
-                        floatEl.style.cssText = [
-                            `width:${w}px`, `height:${h}px`,
-                            'position:fixed', 'top:0', 'left:0',
-                            'pointer-events:none', 'z-index:10000',
-                            'transform:translate3d(-9999px,-9999px,0)',
-                            'transition:opacity 0.3s ease',
-                            'will-change:transform',
-                            'backface-visibility:hidden',
-                        ].join(';');
+                        if (isMultiDrag) {
+                            // 多选：创建堆叠效果
+                            const allDomCards = Array.from(this.boardEl.querySelectorAll('.kanban-card')) as HTMLElement[];
+                            const selectedEls = allDomCards.filter(el => this.selectedCards.has(el.dataset.id!));
+                            const count = selectedEls.length;
+                            const topId = this.lastSelectedCardId && this.selectedCards.has(this.lastSelectedCardId)
+                                ? this.lastSelectedCardId : draggedId;
+                            const topEl = selectedEls.find(el => el.dataset.id === topId) || item;
+                            const nonTopEls = selectedEls.filter(el => el.dataset.id !== topId);
 
-                        // ② 非顶层牌（卡背）+ 顶层牌（完整克隆）
-                        //    堆叠层级：topClone z-index 最高，卡背从上往下 z-index 递减
-                        //    视觉效果：每张卡背向下偏移 5px，被上层卡片遮住大部分，仅底边露出
-                        const nonTopEls = selectedEls.filter(el => el.dataset.id !== topId);
-                        const topEl = selectedEls.find(el => el.dataset.id === topId) || item;
+                            // 清空 fallback 并重建为堆叠容器
+                            fallback.innerHTML = '';
+                            fallback.style.cssText = [
+                                `width:${item.offsetWidth}px`,
+                                `height:${item.offsetHeight}px`,
+                                'position:relative',
+                                'opacity:1 !important',
+                                'pointer-events:none',
+                            ].join(';');
 
-                        // 记录置顶牌的屏幕位置，用于计算其他牌的初始相对偏移（收牌起点）
-                        const topRect = topEl.getBoundingClientRect();
+                            // 添加卡背（从下往上）
+                            nonTopEls.forEach((srcEl, i) => {
+                                const back = document.createElement('div');
+                                const stackDy = (i + 1) * 5;
+                                const backZ = count - 1 - i;
+                                back.style.cssText = [
+                                    `width:${item.offsetWidth}px`,
+                                    `height:${item.offsetHeight}px`,
+                                    'position:absolute',
+                                    'top:0',
+                                    'left:0',
+                                    'background:var(--background-primary)',
+                                    'border:2px solid var(--interactive-accent)',
+                                    `box-shadow:0 ${2 + i}px ${6 + i * 2}px rgba(0,0,0,0.12)`,
+                                    'border-radius:6px',
+                                    'box-sizing:border-box',
+                                    `transform:translateY(${stackDy}px)`,
+                                    `z-index:${backZ}`,
+                                ].join(';');
+                                fallback.appendChild(back);
+                            });
 
-                        nonTopEls.forEach((srcEl, i) => {
-                            const back = document.createElement('div');
-                            // 初始位置：该牌在屏幕上的真实坐标相对于置顶牌的偏移（收牌动画起点）
-                            const srcRect = srcEl.getBoundingClientRect();
-                            const initDy = srcRect.top - topRect.top;
-                            const initDx = srcRect.left - topRect.left;
-                            // z-index：越靠近顶层（i=0）z-index 越高；最底层牌 z-index 最低
-                            // 这样 back[0] 紧贴 topClone 下方，back[1] 在 back[0] 下方，以此类推
-                            const backZ = count - 1 - i;
-                            back.style.cssText = [
-                                `width:${w}px`, `height:${h}px`,
-                                'position:absolute', 'top:0', 'left:0',
+                            // 添加顶层牌克隆
+                            const topClone = topEl.cloneNode(true) as HTMLElement;
+                            topClone.style.cssText = [
+                                `width:${item.offsetWidth}px`,
+                                `height:${item.offsetHeight}px`,
+                                'position:absolute',
+                                'top:0',
+                                'left:0',
                                 'background:var(--background-primary)',
                                 'border:2px solid var(--interactive-accent)',
-                                `box-shadow:0 ${2 + i}px ${6 + i * 2}px rgba(0,0,0,0.12)`,
-                                'border-radius:6px', 'box-sizing:border-box',
-                                // 初始从真实位置出发（无动画，第一帧立刻就位）
-                                `transform:translate(${initDx}px,${initDy}px)`,
-                                'transition:none',
-                                `z-index:${backZ}`,
+                                'box-shadow:0 8px 20px rgba(0,0,0,0.22)',
+                                'border-radius:6px',
+                                'box-sizing:border-box',
+                                'overflow:hidden',
+                                'opacity:1 !important',
+                                `z-index:${count}`,
                             ].join(';');
-                            floatEl.appendChild(back);
-                        });
+                            fallback.appendChild(topClone);
 
-                        // 顶层牌克隆（完整内容，不透明，z-index 最高）
-                        const topClone = topEl.cloneNode(true) as HTMLElement;
-                        topClone.style.cssText = [
-                            `width:${w}px`, `height:${h}px`,
-                            'position:absolute', 'top:0', 'left:0',
-                            'background:var(--background-primary)',
-                            'border:2px solid var(--interactive-accent)',
-                            'box-shadow:0 8px 20px rgba(0,0,0,0.22)',
-                            'border-radius:6px', 'box-sizing:border-box', 'overflow:hidden',
-                            `z-index:${count}`,
-                            'transform:translateY(0)',
-                            'transition:none',
-                        ].join(';');
-                        floatEl.appendChild(topClone);
+                            // 添加数量角标
+                            const badge = document.createElement('div');
+                            badge.style.cssText = [
+                                'position:absolute',
+                                'top:-8px',
+                                'right:-8px',
+                                'background:var(--interactive-accent)',
+                                'color:#fff',
+                                'border-radius:50%',
+                                'width:20px',
+                                'height:20px',
+                                'display:flex',
+                                'align-items:center',
+                                'justify-content:center',
+                                'font-size:11px',
+                                'font-weight:700',
+                                `z-index:${count + 1}`,
+                                'box-shadow:0 2px 4px rgba(0,0,0,0.2)',
+                            ].join(';');
+                            badge.textContent = String(count);
+                            fallback.appendChild(badge);
 
-                        // 数量角标
-                        const badge = document.createElement('div');
-                        badge.style.cssText = [
-                            'position:absolute', 'top:-8px', 'right:-8px',
-                            'background:var(--interactive-accent)', 'color:#fff',
-                            'border-radius:50%', 'width:20px', 'height:20px',
-                            'display:flex', 'align-items:center', 'justify-content:center',
-                            'font-size:11px', 'font-weight:700',
-                            `z-index:${count + 1}`,
-                            'box-shadow:0 2px 4px rgba(0,0,0,0.2)',
-                        ].join(';');
-                        badge.textContent = String(count);
-                        floatEl.appendChild(badge);
-
-                        document.body.appendChild(floatEl);
-                        _multiFloatEl = floatEl;
-
-                        // ③ 收牌动画（两帧策略）：
-                        //    第一帧：将 floatEl 移到置顶牌的屏幕位置，此时卡背 transition:none，已在各自起点
-                        //    第二帧：开启 transition，卡背飞向叠放目标（纯垂直，每张向下 5px，弹性惯性）
-                        requestAnimationFrame(() => {
-                            const currentTopRect = topEl.getBoundingClientRect();
-                            floatEl.style.transform = `translate3d(${currentTopRect.left}px,${currentTopRect.top}px,0)`;
-
-                            requestAnimationFrame(() => {
-                                const children = Array.from(floatEl.children) as HTMLElement[];
-                                const backs = children.slice(0, children.length - 2);
-                                backs.forEach((back: HTMLElement, i: number) => {
-                                    // 目标叠放位置：每层向下偏移 5px（形成可见底边）
-                                    // back[0] 在顶层牌正下方 5px，back[1] 在 10px，以此类推
-                                    const stackDy = (i + 1) * 5;
-                                    back.style.transition = `transform ${0.36 + i * 0.04}s cubic-bezier(0.175,0.885,0.32,1.275)`;
-                                    back.style.transform = `translateY(${stackDy}px)`;
-                                });
-                                // 顶层牌轻微上浮，强调"拿牌"手感
-                                const topCard = children[children.length - 2];
-                                if (topCard) {
-                                    topCard.style.transition = 'transform 0.3s cubic-bezier(0.175,0.885,0.32,1.275)';
-                                    topCard.style.transform = 'translateY(-4px)';
-                                }
+                            // 强制所有选中卡片保持不透明
+                            selectedEls.forEach(el => {
+                                el.style.setProperty('opacity', '1', 'important');
                             });
-                        });
-
-                        // ④ 鼠标追踪：RAF 节流 + 批量更新，避免高频 style 写入导致卡顿
-                        //    dragover 在 Electron 中稳定提供坐标（drag 事件 clientX/Y 为 0）
-                        //    ✅ v1.0.1-beta: 优化拖动流畅度 - 使用 transform3d 强制 GPU 加速
-                        let _rafPending = false;
-                        let _lastDragX = 0, _lastDragY = 0;
-                        const onDragOver = (e: DragEvent) => {
-                            e.preventDefault();
-                            _lastDragX = e.clientX - _dragOffsetX;
-                            _lastDragY = e.clientY - _dragOffsetY;
-                            if (_rafPending) return;
-                            _rafPending = true;
-                            requestAnimationFrame(() => {
-                                _rafPending = false;
-                                // 使用 translate3d 强制 GPU 加速，提升拖动流畅度
-                                floatEl.style.transform = `translate3d(${_lastDragX}px,${_lastDragY}px,0)`;
-                            });
-                        };
-                        document.addEventListener('dragover', onDragOver, { passive: false });
-
-                        // ⑤ 选中的真实卡片：保持可见，SortableJS 仍需要它们在 DOM 中占位
-                        // ✅ v1.0.1-beta: 移除拖动时的透明化效果
-                        // selectedEls.forEach(el => { el.style.opacity = '0'; });
-
-                        _multiFloatCleanup = () => {
-                            document.removeEventListener('dragover', onDragOver);
-                            _rafPending = false;
-                        };
-
-                        // ⑥ 透明 1×1 canvas 作为 HTML5 drag image，让浏览器不渲染系统幽灵
-                        const transparentImg = document.createElement('canvas');
-                        transparentImg.width = 1; transparentImg.height = 1;
-                        document.body.appendChild(transparentImg);
-                        const nativeDragEvent = evt.originalEvent as DragEvent;
-                        if (nativeDragEvent?.dataTransfer) {
-                            nativeDragEvent.dataTransfer.effectAllowed = 'move';
-                            nativeDragEvent.dataTransfer.setDragImage(transparentImg, 0, 0);
+                        } else {
+                            // 单选：确保 fallback 完全不透明
+                            fallback.style.setProperty('opacity', '1', 'important');
                         }
-                        requestAnimationFrame(() => { if (transparentImg.parentNode) transparentImg.parentNode.removeChild(transparentImg); });
-
-                    } else {
-                        // 单选：创建单张卡片预览图（原有逻辑）
-                        // ✅ v1.0.1-beta: 移除透明度，保持卡片完全不透明
-                        const dragImageEl = item.cloneNode(true) as HTMLElement;
-                        dragImageEl.style.cssText = [
-                            `width:${w}px`, `height:${h}px`,
-                            'position:fixed', 'top:-9999px', 'left:-9999px',
-                            'pointer-events:none', 'z-index:9999',
-                            'background:var(--background-primary)',
-                            'border:2px solid var(--interactive-accent)',
-                            'box-shadow:0 8px 24px rgba(0,0,0,0.25)',
-                            'border-radius:6px', 'box-sizing:border-box', 'overflow:hidden',
-                            'transform:rotate(2deg)',
-                        ].join(';');
-                        document.body.appendChild(dragImageEl);
-                        (item as any)._dragImageEl = dragImageEl;
-
-                        const nativeDragEvent = evt.originalEvent as DragEvent;
-                        if (nativeDragEvent?.dataTransfer) {
-                            nativeDragEvent.dataTransfer.effectAllowed = 'move';
-                            nativeDragEvent.dataTransfer.setDragImage(dragImageEl, _dragOffsetX, _dragOffsetY);
-                        }
-                    }
-
-                    // ✅ v1.0.1-beta: 移除拖动时的透明化效果，保持卡片原样式
-                    // item.style.opacity = '0.4';
+                    });
                 },
                 onEnd: async (evt: any) => {
                     this.boardEl.removeClass("is-dragging-card");
 
-                    // ✅ v1.0.2: 发牌动画 — 卡背依次向下滑出（上下方向），整体淡出
-                    if (_multiFloatEl) {
-                        const floatEl = _multiFloatEl;
-                        if (_multiFloatCleanup) { _multiFloatCleanup(); _multiFloatCleanup = null; }
-
-                        // 发牌：卡背依次向下弹出（模拟从牌堆里发出去的感觉），顶层牌轻微上弹后淡出
-                        const children = Array.from(floatEl.children) as HTMLElement[];
-                        // 最后两个子元素：顶层克隆 + 角标，其余为卡背
-                        const backs = children.slice(0, children.length - 2);
-                        const topCard = children[children.length - 2];
-
-                        // 每张卡背依次延迟向下滑出，制造"发牌"的错落感
-                        backs.forEach((back: HTMLElement, i: number) => {
-                            const delay = i * 40; // ms，错落延迟
-                            const finalDy = 30 + i * 8; // 向下偏移量，越后面的牌落得越远
-                            back.style.transition = `transform 0.32s ${delay}ms cubic-bezier(0.22,1,0.36,1), opacity 0.25s ${delay + 60}ms ease`;
-                            back.style.transform = `translate(0px,${finalDy}px)`;
-                            back.style.opacity = '0';
-                        });
-
-                        // 顶层牌：先轻微上弹，再随整体淡出
-                        if (topCard) {
-                            topCard.style.transition = 'transform 0.22s cubic-bezier(0.175,0.885,0.32,1.275)';
-                            topCard.style.transform = 'translateY(-6px) scale(1.02)';
-                        }
-
-                        // 整体淡出（稍晚于卡背动画，让发牌效果先显现）
-                        const fadeDelay = backs.length * 40 + 80;
-                        setTimeout(() => {
-                            floatEl.style.transition = 'opacity 0.2s ease';
-                            floatEl.style.opacity = '0';
-                        }, fadeDelay);
-                        setTimeout(() => {
-                            if (floatEl.parentNode) floatEl.parentNode.removeChild(floatEl);
-                        }, fadeDelay + 220);
-                        _multiFloatEl = null;
-                    }
-
-                    // 单选：恢复原始元素，清理 drag image 节点
-                    evt.item.style.opacity = '';
-                    const dragImg = (evt.item as any)._dragImageEl;
-                    if (dragImg && dragImg.parentNode) dragImg.parentNode.removeChild(dragImg);
-                    delete (evt.item as any)._dragImageEl;
-
-                    // 恢复所有卡片透明度
+                    // 恢复所有卡片的透明度
                     this.boardEl.querySelectorAll('.kanban-card').forEach((el: Element) => {
                         (el as HTMLElement).style.opacity = '';
                     });
@@ -1471,8 +1474,9 @@ class KanbanView extends BasesView {
         const boardSortable = new Sortable(this.boardEl, {
             animation: settings.animationDuration, easing: easingCurve, handle: ".kanban-column-drag-handle",
             filter: ".kanban-col-menu-btn, .kanban-column-resizer", preventOnFilter: false,
-            // ✅ v1.0.14: 列拖拽也使用原生 HTML5 拖拽
-            forceFallback: false,
+            // ✅ v1.0.2-beta: 列拖拽也使用 fallback 模式避免透明化
+            forceFallback: true,
+            fallbackTolerance: 3,
             disabled: isDragLocked, ghostClass: 'kanban-column-ghost',
             onStart: (evt: any) => {
                 this.boardEl.addClass("is-dragging-column");
@@ -1543,6 +1547,18 @@ export default class TaskKanbanPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+
+    // ✅ v1.0.2: 初始化视图配置
+    if (!this.settings.savedViews || this.settings.savedViews.length === 0) {
+      this.settings.savedViews = [
+        { id: "view-1", name: "任务状态", groupByProperty: "status" },
+        { id: "view-2", name: "任务进度", groupByProperty: this.settings.progressProperty || "任务执行情况" },
+        { id: "view-3", name: "所属项目", groupByProperty: this.settings.projectProperty || "任务所属项目" }
+      ];
+    }
+    if (!this.settings.currentViewId) {
+      this.settings.currentViewId = this.settings.savedViews[0]?.id || "view-1";
+    }
 
     if (!this.settings.globalMetaStyles) this.settings.globalMetaStyles = {};
     if (!this.settings.pinnedMetaConfigs) this.settings.pinnedMetaConfigs = {};

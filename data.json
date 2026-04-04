@@ -1,5 +1,23 @@
 {
   "defaultGroupBy": "status",
+  "savedViews": [
+    {
+      "id": "view-1",
+      "name": "任务状态",
+      "groupByProperty": "status"
+    },
+    {
+      "id": "view-2",
+      "name": "任务进度",
+      "groupByProperty": "任务执行情况"
+    },
+    {
+      "id": "view-3",
+      "name": "所属项目",
+      "groupByProperty": "任务所属项目"
+    }
+  ],
+  "currentViewId": "view-1",
   "dragLocked": false,
   "dragDelay": 0,
   "globalHiddenColumns": [
