@@ -1107,10 +1107,11 @@ class KanbanView extends BasesView {
                 group: 'shared',
                 animation: settings.animationDuration,
                 easing: easingCurve,
-                // ✅ v1.0.3: 使用 fallback 模式 + 自定义 setData 完全控制拖拽视觉
+                // 使用 fallback 模式 + 自定义拖拽视觉
                 forceFallback: true,
                 fallbackTolerance: 3,
                 fallbackClass: 'kanban-card-fallback',
+                fallbackOnBody: true,
                 scroll: true,
                 scrollSensitivity: 80,
                 scrollSpeed: 15,
@@ -1122,9 +1123,8 @@ class KanbanView extends BasesView {
                 ghostClass: 'kanban-card-ghost',
                 chosenClass: 'kanban-card-chosen-custom',
                 dragClass: 'kanban-card-drag-custom',
-                // ✅ v1.0.3: 自定义 fallback 元素的创建
                 setData: function(dataTransfer: any, dragEl: HTMLElement) {
-                    // 阻止默认行为，我们完全自定义 fallback
+                    // 阻止默认行为
                 },
                 onStart: (evt: any) => {
                     this.boardEl.addClass("is-dragging-card");
@@ -1134,8 +1134,14 @@ class KanbanView extends BasesView {
 
                     // 保存鼠标点击位置相对于卡片的偏移
                     const rect = item.getBoundingClientRect();
-                    const offsetX = evt.originalEvent.clientX - rect.left;
-                    const offsetY = evt.originalEvent.clientY - rect.top;
+                    const mouseX = evt.originalEvent.clientX;
+                    const mouseY = evt.originalEvent.clientY;
+                    const offsetX = mouseX - rect.left;
+                    const offsetY = mouseY - rect.top;
+
+                    console.log('[拖拽调试] 鼠标位置:', { mouseX, mouseY });
+                    console.log('[拖拽调试] 卡片rect:', { left: rect.left, top: rect.top, width: rect.width, height: rect.height });
+                    console.log('[拖拽调试] 计算偏移:', { offsetX, offsetY });
 
                     // 保存多选卡片的原始顺序
                     if (isMultiDrag) {
@@ -1156,56 +1162,78 @@ class KanbanView extends BasesView {
                         const fallback = document.querySelector('.kanban-card-fallback') as HTMLElement;
                         if (!fallback) return;
 
-                        // 修正 fallback 位置，使其以鼠标点击位置为支点
-                        const currentLeft = parseFloat(fallback.style.left) || 0;
-                        const currentTop = parseFloat(fallback.style.top) || 0;
-                        fallback.style.left = `${currentLeft - offsetX}px`;
-                        fallback.style.top = `${currentTop - offsetY}px`;
+                        // 完全禁用 SortableJS 的 transform，我们手动控制位置
+                        fallback.style.transform = 'none';
+                        fallback.style.transition = 'none';
+                        fallback.style.willChange = 'left, top';
+
+                        // 手动跟随鼠标的函数
+                        const updatePosition = (e: MouseEvent) => {
+                            const newLeft = e.clientX - offsetX;
+                            const newTop = e.clientY - offsetY;
+                            fallback.style.left = `${newLeft}px`;
+                            fallback.style.top = `${newTop}px`;
+                            // 强制覆盖 SortableJS 可能设置的 transform
+                            fallback.style.transform = 'none';
+                        };
+
+                        // 监听鼠标移动
+                        const mouseMoveHandler = (e: MouseEvent) => {
+                            updatePosition(e);
+                        };
+
+                        document.addEventListener('mousemove', mouseMoveHandler);
+
+                        // 保存 handler 以便清理
+                        (fallback as any)._mouseMoveHandler = mouseMoveHandler;
+
+                        // 初始位置
+                        fallback.style.left = `${mouseX - offsetX}px`;
+                        fallback.style.top = `${mouseY - offsetY}px`;
+
+                        console.log('[拖拽调试] 初始位置设置:', {
+                            left: mouseX - offsetX,
+                            top: mouseY - offsetY
+                        });
+
+                        // 使用 MutationObserver 监听并阻止 SortableJS 修改 transform
+                        const observer = new MutationObserver((mutations) => {
+                            for (const mutation of mutations) {
+                                if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                                    const currentTransform = fallback.style.transform;
+                                    if (currentTransform && currentTransform !== 'none') {
+                                        fallback.style.transform = 'none';
+                                    }
+                                }
+                            }
+                        });
+
+                        observer.observe(fallback, {
+                            attributes: true,
+                            attributeFilter: ['style']
+                        });
+
+                        // 保存 observer 以便清理
+                        (fallback as any)._transformObserver = observer;
 
                         if (isMultiDrag) {
-                            // 多选：仅显示最后选中的卡片 + 右上角数量角标
+                            // 多选：仅显示被拖拽的卡片 + 右上角数量角标
                             const allDomCards = Array.from(this.boardEl.querySelectorAll('.kanban-card')) as HTMLElement[];
                             const selectedEls = allDomCards.filter(el => this.selectedCards.has(el.dataset.id!));
-                            const count = selectedEls.length;
-                            const topId = this.lastSelectedCardId && this.selectedCards.has(this.lastSelectedCardId)
-                                ? this.lastSelectedCardId : draggedId;
-                            const topEl = selectedEls.find(el => el.dataset.id === topId) || item;
+                            const count = this.selectedCards.size;
 
-                            const w = item.offsetWidth;
-                            const h = item.offsetHeight;
-
-                            fallback.style.width = `${w}px`;
-                            fallback.style.height = `${h}px`;
+                            // 清空 fallback 并重新构建
+                            fallback.innerHTML = '';
+                            fallback.style.width = `${rect.width}px`;
+                            fallback.style.height = `${rect.height}px`;
                             fallback.style.overflow = 'visible';
                             fallback.style.opacity = '1';
                             fallback.style.pointerEvents = 'none';
-                            fallback.innerHTML = '';
 
-                            // 包装层
-                            const wrapper = document.createElement('div');
-                            wrapper.style.cssText = [
-                                `width:${w}px`,
-                                `height:${h}px`,
-                                'position:relative',
-                                'overflow:visible',
-                            ].join(';');
-
-                            // 代表卡片克隆
-                            const topClone = topEl.cloneNode(true) as HTMLElement;
-                            topClone.style.cssText = [
-                                `width:${w}px`,
-                                `height:${h}px`,
-                                'position:absolute',
-                                'top:0',
-                                'left:0',
-                                'background:var(--background-primary)',
-                                'border:1px solid var(--interactive-accent)',
-                                'box-shadow:0 6px 18px rgba(0,0,0,0.2)',
-                                'border-radius:6px',
-                                'box-sizing:border-box',
-                                'overflow:hidden',
-                            ].join(';');
-                            wrapper.appendChild(topClone);
+                            // 克隆被拖拽的卡片
+                            const cardClone = item.cloneNode(true) as HTMLElement;
+                            cardClone.style.cssText = 'width:100%;height:100%;margin:0;';
+                            fallback.appendChild(cardClone);
 
                             // 数量角标
                             const badge = document.createElement('div');
@@ -1216,33 +1244,46 @@ class KanbanView extends BasesView {
                                 'background:var(--interactive-accent)',
                                 'color:#fff',
                                 'border-radius:50%',
-                                'width:20px',
-                                'height:20px',
+                                'width:24px',
+                                'height:24px',
                                 'display:flex',
                                 'align-items:center',
                                 'justify-content:center',
-                                'font-size:11px',
+                                'font-size:12px',
                                 'font-weight:700',
-                                'z-index:10',
-                                'box-shadow:0 2px 4px rgba(0,0,0,0.2)',
+                                'z-index:1000',
+                                'box-shadow:0 2px 6px rgba(0,0,0,0.3)',
                             ].join(';');
                             badge.textContent = String(count);
-                            wrapper.appendChild(badge);
+                            fallback.appendChild(badge);
 
-                            fallback.appendChild(wrapper);
-
-                            // 强制所有选中卡片保持不透明
+                            // 隐藏其他选中的卡片（除了被拖拽的）
                             selectedEls.forEach(el => {
-                                el.style.setProperty('opacity', '1', 'important');
+                                if (el !== item) {
+                                    el.style.setProperty('opacity', '0.3', 'important');
+                                }
                             });
                         } else {
-                            // 单选：直接显示，无需等待 transform
+                            // 单选：直接显示
                             fallback.style.opacity = '1';
                         }
                     });
                 },
                 onEnd: async (evt: any) => {
                     this.boardEl.removeClass("is-dragging-card");
+
+                    // 清理 mousemove 监听器和 observer
+                    const fallback = document.querySelector('.kanban-card-fallback') as HTMLElement;
+                    if (fallback) {
+                        if ((fallback as any)._mouseMoveHandler) {
+                            document.removeEventListener('mousemove', (fallback as any)._mouseMoveHandler);
+                            delete (fallback as any)._mouseMoveHandler;
+                        }
+                        if ((fallback as any)._transformObserver) {
+                            (fallback as any)._transformObserver.disconnect();
+                            delete (fallback as any)._transformObserver;
+                        }
+                    }
 
                     // 恢复所有卡片的透明度
                     this.boardEl.querySelectorAll('.kanban-card').forEach((el: Element) => {
