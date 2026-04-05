@@ -1,7 +1,7 @@
 {
   "id": "bases-kanban-view",
   "name": "Bases Kanban View",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "minAppVersion": "1.4.0",
   "description": "A high-performance, highly customizable Kanban view plugin with global meta styling and fluid drag-and-drop.",
   "author": "Gemini",

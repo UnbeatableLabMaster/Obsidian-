@@ -1132,6 +1132,11 @@ class KanbanView extends BasesView {
                     const draggedId = item.dataset.id;
                     const isMultiDrag = draggedId && this.selectedCards.has(draggedId) && this.selectedCards.size > 1;
 
+                    // 保存鼠标点击位置相对于卡片的偏移
+                    const rect = item.getBoundingClientRect();
+                    const offsetX = evt.originalEvent.clientX - rect.left;
+                    const offsetY = evt.originalEvent.clientY - rect.top;
+
                     // 保存多选卡片的原始顺序
                     if (isMultiDrag) {
                         const fromContainer = evt.from;
@@ -1143,31 +1148,32 @@ class KanbanView extends BasesView {
                         this._dragOriginalOrder = [];
                     }
 
-                    // ✅ v1.0.3: 强制原始卡片保持完全不透明
+                    // 强制原始卡片保持完全不透明
                     item.style.setProperty('opacity', '1', 'important');
 
-                    // ✅ 自定义 fallback 元素，整合堆叠效果
-                    // SortableJS 在 onStart 后立即创建 .kanban-card-fallback 并以 position:fixed 跟随鼠标，
-                    // 但其初始定位基于卡片左上角，与实际点击位置存在偏差。
-                    // 我们在下一帧修正 top/left，使其以鼠标点击位置为锚点自然出现。
+                    // 自定义 fallback 元素
                     requestAnimationFrame(() => {
                         const fallback = document.querySelector('.kanban-card-fallback') as HTMLElement;
                         if (!fallback) return;
 
+                        // 修正 fallback 位置，使其以鼠标点击位置为支点
+                        const currentLeft = parseFloat(fallback.style.left) || 0;
+                        const currentTop = parseFloat(fallback.style.top) || 0;
+                        fallback.style.left = `${currentLeft - offsetX}px`;
+                        fallback.style.top = `${currentTop - offsetY}px`;
+
                         if (isMultiDrag) {
-                            // 多选：创建堆叠效果
+                            // 多选：仅显示最后选中的卡片 + 右上角数量角标
                             const allDomCards = Array.from(this.boardEl.querySelectorAll('.kanban-card')) as HTMLElement[];
                             const selectedEls = allDomCards.filter(el => this.selectedCards.has(el.dataset.id!));
                             const count = selectedEls.length;
                             const topId = this.lastSelectedCardId && this.selectedCards.has(this.lastSelectedCardId)
                                 ? this.lastSelectedCardId : draggedId;
                             const topEl = selectedEls.find(el => el.dataset.id === topId) || item;
-                            const nonTopEls = selectedEls.filter(el => el.dataset.id !== topId);
 
                             const w = item.offsetWidth;
                             const h = item.offsetHeight;
 
-                            // 保留 SortableJS 的 position/top/left，只清空内部内容并重设尺寸
                             fallback.style.width = `${w}px`;
                             fallback.style.height = `${h}px`;
                             fallback.style.overflow = 'visible';
@@ -1175,7 +1181,7 @@ class KanbanView extends BasesView {
                             fallback.style.pointerEvents = 'none';
                             fallback.innerHTML = '';
 
-                            // 内部相对包装层，所有堆叠元素都挂在这里
+                            // 包装层
                             const wrapper = document.createElement('div');
                             wrapper.style.cssText = [
                                 `width:${w}px`,
@@ -1184,27 +1190,7 @@ class KanbanView extends BasesView {
                                 'overflow:visible',
                             ].join(';');
 
-                            // 卡背（从最下层往上叠）
-                            nonTopEls.forEach((_, i) => {
-                                const back = document.createElement('div');
-                                back.style.cssText = [
-                                    `width:${w}px`,
-                                    `height:${h}px`,
-                                    'position:absolute',
-                                    'top:0',
-                                    'left:0',
-                                    'background:var(--background-primary)',
-                                    'border:1px solid var(--interactive-accent)',
-                                    `box-shadow:0 ${2 + i}px ${6 + i * 2}px rgba(0,0,0,0.1)`,
-                                    'border-radius:6px',
-                                    'box-sizing:border-box',
-                                    `transform:translate(${(i + 1) * 3}px, ${(i + 1) * 4}px)`,
-                                    `z-index:${count - 1 - i}`,
-                                ].join(';');
-                                wrapper.appendChild(back);
-                            });
-
-                            // 顶层卡克隆
+                            // 代表卡片克隆
                             const topClone = topEl.cloneNode(true) as HTMLElement;
                             topClone.style.cssText = [
                                 `width:${w}px`,
@@ -1218,7 +1204,6 @@ class KanbanView extends BasesView {
                                 'border-radius:6px',
                                 'box-sizing:border-box',
                                 'overflow:hidden',
-                                `z-index:${count}`,
                             ].join(';');
                             wrapper.appendChild(topClone);
 
@@ -1238,7 +1223,7 @@ class KanbanView extends BasesView {
                                 'justify-content:center',
                                 'font-size:11px',
                                 'font-weight:700',
-                                `z-index:${count + 1}`,
+                                'z-index:10',
                                 'box-shadow:0 2px 4px rgba(0,0,0,0.2)',
                             ].join(';');
                             badge.textContent = String(count);
@@ -1251,25 +1236,8 @@ class KanbanView extends BasesView {
                                 el.style.setProperty('opacity', '1', 'important');
                             });
                         } else {
-                            // 单选：消除拖拽触发瞬间 ghost 出现在错误位置的跳变
-                            // 原因：SortableJS ghost 初始定位在卡片 rect，delay 期间鼠标已移动，
-                            // 第一次 mousemove 才会通过 transform 修正到正确位置，这之间有一帧偏差。
-                            // 解法：先让 ghost 完全透明，等 SortableJS 写入第一个 transform（已对齐鼠标）
-                            // 后再显示，消除视觉跳变。
-                            fallback.style.opacity = '0';
-                            const showWhenAligned = new MutationObserver(() => {
-                                const t = fallback.style.transform;
-                                if (t && t !== 'none' && t !== '') {
-                                    fallback.style.setProperty('opacity', '1', 'important');
-                                    showWhenAligned.disconnect();
-                                }
-                            });
-                            showWhenAligned.observe(fallback, { attributes: true, attributeFilter: ['style'] });
-                            // 兜底：200ms 后若仍未显示（鼠标静止未触发 transform）则强制显示
-                            setTimeout(() => {
-                                showWhenAligned.disconnect();
-                                fallback.style.setProperty('opacity', '1', 'important');
-                            }, 200);
+                            // 单选：直接显示，无需等待 transform
+                            fallback.style.opacity = '1';
                         }
                     });
                 },
