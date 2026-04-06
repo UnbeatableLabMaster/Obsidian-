@@ -1,0 +1,15 @@
+{
+  "types": {
+    "aliases": "aliases",
+    "cssclasses": "multitext",
+    "tags": "tags",
+    "任务执行情况": "multitext",
+    "任务创建日期": "date",
+    "任务阶段": "multitext",
+    "所属任务": "multitext",
+    "任务所属项目": "multitext",
+    "任务优先程度": "multitext",
+    "执行进度": "multitext",
+    "项目环节": "multitext"
+  }
+}

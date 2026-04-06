@@ -1,0 +1,229 @@
+{
+  "main": {
+    "id": "fcbdcc4291bd1809",
+    "type": "split",
+    "children": [
+      {
+        "id": "581f0e58fb718e8e",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "0938d895a91b1e03",
+            "type": "leaf",
+            "state": {
+              "type": "bases",
+              "state": {
+                "file": "未命名.base",
+                "viewName": "任务管理"
+              },
+              "icon": "lucide-layout-list",
+              "title": "未命名"
+            }
+          },
+          {
+            "id": "01cf6c41e0d34c59",
+            "type": "leaf",
+            "state": {
+              "type": "empty",
+              "state": {},
+              "icon": "lucide-file",
+              "title": "新标签页"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "5a0027e7ea08c563",
+    "type": "split",
+    "children": [
+      {
+        "id": "804711d0f84bac4e",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "c4aa5b49c103312a",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "文件列表"
+            }
+          },
+          {
+            "id": "7b27e70925276f43",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "搜索"
+            }
+          },
+          {
+            "id": "4578e71173f37673",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "书签"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 622.5,
+    "collapsed": true
+  },
+  "right": {
+    "id": "f3eab0a8ec5bb6ea",
+    "type": "split",
+    "children": [
+      {
+        "id": "327533e25f9c5f4a",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "2b328fd2f7000a8f",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "测试文件2(不属于).md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "测试文件2(不属于) 的反向链接列表"
+            }
+          },
+          {
+            "id": "db54b7abf5ad924c",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "出链"
+            }
+          },
+          {
+            "id": "21631693aaa372d7",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "标签"
+            }
+          },
+          {
+            "id": "7d204e7e6912185e",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "添加笔记属性"
+            }
+          },
+          {
+            "id": "1f96d3c0baf4ea8f",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "大纲"
+            }
+          }
+        ],
+        "currentTab": 2
+      }
+    ],
+    "direction": "horizontal",
+    "width": 764.5,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:打开快速切换": false,
+      "graph:查看关系图谱": false,
+      "canvas:新建白板": false,
+      "daily-notes:打开/创建今天的日记": false,
+      "templates:插入模板": false,
+      "command-palette:打开命令面板": false,
+      "bases:新建数据库": false
+    }
+  },
+  "active": "0938d895a91b1e03",
+  "lastOpenFiles": [
+    "项目1文件/测试文件-1.3.md",
+    "未命名.base",
+    "项目1文件/测试文件1.5.md",
+    "项目1文件/测试文件-1.2.md",
+    "项目1文件/测试文件-1.1.md",
+    "未命名.base.tmp.31872.1775296238352",
+    "项目1文件/测试文件-1.4.md",
+    "测试文件2(不属于).md",
+    "总数据库.base",
+    "20260401-中马.md",
+    "项目2文件/测试文件-2.1.md",
+    "项目2文件/测试文件-2.4.md",
+    "项目2文件/测试文件-2.3.md",
+    "项目2文件/测试文件-2.2.md",
+    "项目2文件",
+    "项目1文件",
+    "已完成.md",
+    "虚拟.md",
+    "搁置中.md",
+    "这是一个待分类的笔记.md",
+    "测试.md",
+    "这是一个没有项目所属的笔记.md",
+    "1.md",
+    "虚拟卡片笔记.md",
+    "cesih.md",
+    "这是虚拟卡片笔记.md",
+    "这是虚拟笔记2.md",
+    "Pasted image 20260321214643.png",
+    "未命名 4.md",
+    "未命名 3.md",
+    "欢迎.md"
+  ]
+}

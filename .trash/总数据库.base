@@ -1,0 +1,7 @@
+views:
+  - type: kanban-view
+    name: 项目环节
+    filters:
+      and:
+        - file.basename != "总数据库"
+    groupByProperty: note.项目环节
