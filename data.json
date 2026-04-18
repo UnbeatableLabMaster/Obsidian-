@@ -7,14 +7,14 @@
       "currentSubViewId": "sub-3",
       "views": [
         {
-          "id": "sub-2",
-          "name": "任务进度",
-          "groupByProperty": "执行进度"
-        },
-        {
           "id": "sub-3",
           "name": "所属项目",
           "groupByProperty": "项目环节"
+        },
+        {
+          "id": "sub-2",
+          "name": "任务进度",
+          "groupByProperty": "执行进度"
         }
       ]
     }
@@ -68,7 +68,7 @@
   "projectProperty": "项目环节",
   "uncategorizedName": "待分类",
   "defaultOrderProperty": "项目环节",
-  "orderPrefix": "T",
+  "orderPrefix": "Tasks",
   "orderMiddleProperty": "",
   "orderSeparator": "-",
   "orderFormat": "padded",
@@ -76,6 +76,7 @@
   "pinnedOrderPrefix": "",
   "pinnedOrderSeparator": "-",
   "pinnedOrderFormat": "padded",
+  "summaryCardPrefix": "Retro",
   "orderBadgePrefix": "#",
   "orderBadgeStyle": "ordinal",
   "stageProperty": "任务所属项目",
@@ -85,6 +86,8 @@
   "progressUncheckedValue": "暂搁置",
   "progressDraftValue": "待计划",
   "pinnedProperty": "任务核心总结",
+  "summaryAssociationProperty": "关联任务",
+  "taskReferenceProperty": "所属总结",
   "archiveProperty": "任务归档状态",
   "archiveCycleProperty": "任务完成周期",
   "customSortProperty": "",
@@ -153,7 +156,9 @@
     ],
     "项目环节": [
       "DNA 序列处理模型调研",
-      "待分类"
+      "待分类",
+      "T",
+      "Retro"
     ]
   },
   "cardAliases": {},
@@ -455,6 +460,7 @@
       "valueStyles": []
     }
   },
+  "taskCardPrefix": "Task",
   "boardWrap": false,
   "stageValueTemplate": "{value}-{order}"
 }

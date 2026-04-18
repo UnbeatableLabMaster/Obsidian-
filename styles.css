@@ -290,7 +290,7 @@
 .kanban-board.bkv-style-completed .kanban-card.is-completed .kanban-card-title { text-decoration: line-through; color: var(--text-muted); }
 .kanban-board.bkv-style-completed .kanban-card.is-completed .kanban-card-meta-badge { opacity: 0.6; }
 
-/* ✅ v1.0.6-alpha.1: 多选卡片样式 - 选中时显示紫色边框，拖拽时隐藏 */
+/* ✅ v1.0.6-alpha.1: 多选卡片样式 - 选中时显示紫色边框 */
 .kanban-card.is-selected,
 .kanban-card.is-selected:hover,
 .kanban-card.is-virtual.is-selected,
@@ -300,12 +300,6 @@
     border-style: solid !important;
     box-shadow: 0 0 0 2px rgba(var(--interactive-accent-rgb), 0.25) !important;
     transform: none !important;
-}
-
-/* 拖拽时移除选中卡片的紫色边框 */
-.is-dragging-card .kanban-card.is-selected {
-    border-color: var(--background-modifier-border) !important;
-    box-shadow: none !important;
 }
 /* ✅ v1.0.1-beta: 置顶卡片遮盖非置顶卡片，只露出底边堆叠效果 */
 .kanban-card.is-pinned { background: var(--background-primary); z-index: 10; margin-bottom: 2px; position: relative; }
@@ -390,6 +384,139 @@
 .kanban-card-fallback {
     cursor: grabbing !important;
     box-shadow: 0 8px 24px rgba(0,0,0,0.25) !important;
+}
+
+.kanban-card-fallback.is-multidrag-stack {
+    box-shadow: none !important;
+    background: transparent !important;
+    border: none !important;
+}
+
+.kanban-multidrag-stack-card {
+    position: absolute;
+    inset: 0;
+    transform-origin: top center;
+    transition: transform 140ms ease, opacity 140ms ease;
+    pointer-events: none;
+}
+
+.kanban-multidrag-stack-card.is-layer-5 {
+    transform: translateY(30px) scale(0.925);
+    opacity: 0.22;
+}
+
+.kanban-multidrag-stack-card.is-layer-4 {
+    transform: translateY(24px) scale(0.94);
+    opacity: 0.34;
+}
+
+.kanban-multidrag-stack-card.is-layer-3 {
+    transform: translateY(18px) scale(0.955);
+    opacity: 0.46;
+}
+
+.kanban-multidrag-stack-card.is-layer-2 {
+    transform: translateY(12px) scale(0.97);
+    opacity: 0.62;
+}
+
+.kanban-multidrag-stack-card.is-layer-1 {
+    transform: translateY(6px) scale(0.985);
+    opacity: 0.82;
+}
+
+.kanban-multidrag-stack-card.is-layer-0,
+.kanban-multidrag-stack-card.is-front {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+}
+
+.kanban-multidrag-stack-card > .kanban-card {
+    width: 100%;
+    height: 100%;
+    margin: 0 !important;
+}
+
+.kanban-multidrag-badge {
+    position: absolute;
+    top: -1px;
+    right: -1px;
+    min-width: 24px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 0 12px 0 10px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent, #fff);
+    border-left: 1px solid rgba(var(--interactive-accent-rgb), 0.26);
+    border-bottom: 1px solid rgba(var(--interactive-accent-rgb), 0.26);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    z-index: 8;
+    box-shadow: 0 6px 14px rgba(0,0,0,0.16);
+}
+
+.kanban-multidrag-overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 99999;
+}
+
+.kanban-multidrag-fly-card {
+    position: fixed;
+    margin: 0 !important;
+    pointer-events: none;
+    z-index: 2;
+    transform-origin: top left;
+    transition: transform 220ms cubic-bezier(.2,.82,.2,1), width 220ms cubic-bezier(.2,.82,.2,1), height 220ms cubic-bezier(.2,.82,.2,1), opacity 220ms ease;
+    box-shadow: 0 10px 26px rgba(0,0,0,0.22);
+}
+
+.is-dragging-card .kanban-card.is-multidrag-source {
+    visibility: hidden !important;
+}
+
+.kanban-column-body.is-multidrag-slot-container,
+.kanban-pinned-inner.is-multidrag-slot-container {
+    position: relative;
+}
+
+.kanban-column-body.is-multidrag-slot-container::before,
+.kanban-pinned-inner.is-multidrag-slot-container::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: 6px;
+    bottom: 6px;
+    border-radius: 14px;
+    border: 1px dashed rgba(var(--interactive-accent-rgb), 0.18);
+    background: rgba(var(--interactive-accent-rgb), 0.04);
+    opacity: 1;
+    pointer-events: none;
+}
+
+.kanban-card.is-multidrag-slot-preview {
+    position: relative;
+    border-color: rgba(var(--interactive-accent-rgb), 0.5) !important;
+    box-shadow: 0 0 0 1px rgba(var(--interactive-accent-rgb), 0.20), 0 10px 22px rgba(var(--interactive-accent-rgb), 0.10) !important;
+}
+
+.kanban-card.is-multidrag-slot-preview::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border-radius: 12px;
+    background: rgba(var(--interactive-accent-rgb), 0.08);
+    z-index: -1;
+}
+
+.kanban-card.is-multidrag-slot {
+    opacity: 0.18 !important;
 }
 
 /* ✅ v1.0.11: 拖拽时其他卡片/列表保持原样，不变淡 */

@@ -7,6 +7,9 @@ export interface VirtualCard {
   body?: string;
   progressValue?: string;
   targetFolder?: string;
+  associatedTaskIds?: string[]; // 关联的任务卡片 ID 列表（用于总结卡片）
+  summaryCardId?: string; // 所属的总结卡片 ID（用于任务卡片）
+  summaryOrder?: number; // 在总结卡片中的排序编号（用于任务卡片）
 }
 
 export interface ValueStyle {
@@ -93,6 +96,7 @@ export interface PluginSettings {
   pinnedOrderPrefix: string;
   pinnedOrderSeparator: string;
   pinnedOrderFormat: string;
+  summaryCardPrefix: string; // 总结卡片的前缀（如 Retro）
   // 简易编号标签
   orderBadgePrefix: string;
   orderBadgeStyle: string;          // hash | no_dot | ordinal（1st/2nd）| number
@@ -107,6 +111,8 @@ export interface PluginSettings {
 
   // ── 其他（保留字段，暂不开放配置） ──
   pinnedProperty: string;
+  summaryAssociationProperty: string; // 总结卡片关联任务的属性名
+  taskReferenceProperty: string; // 任务卡片引用总结卡片的属性名
   archiveProperty: string;
   archiveCycleProperty: string;
   customSortProperty: string;
@@ -183,6 +189,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   pinnedOrderPrefix: "",
   pinnedOrderSeparator: "-",
   pinnedOrderFormat: "padded",
+  summaryCardPrefix: "Retro",
   orderBadgePrefix: "#",
   orderBadgeStyle: "hash",
   stageProperty: "任务所处阶段",
@@ -193,6 +200,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   progressDraftValue: "待计划",
 
   pinnedProperty: "任务核心总结",
+  summaryAssociationProperty: "关联任务",
+  taskReferenceProperty: "所属总结",
   archiveProperty: "任务归档状态",
   archiveCycleProperty: "任务完成周期",
   customSortProperty: "",
@@ -286,9 +295,14 @@ export class TaskKanbanSettingTab extends PluginSettingTab {
       const stageSub = createSubGroup(containerEl);
 
       new Setting(stageSub)
-        .setName("类型前缀")
-        .setDesc("写入属性值时加在最前面，例如 task、project。留空则不加前缀。")
-        .addText(t => { t.setPlaceholder("例：task").setValue(s.orderPrefix).onChange(async v => { s.orderPrefix = v.trim(); await save(); updatePreview(); }); t.inputEl.style.width = "120px"; });
+        .setName("任务卡片前缀")
+        .setDesc("任务区卡片的属性值前缀，例如 Task。")
+        .addText(t => { t.setPlaceholder("例：Task").setValue(s.orderPrefix).onChange(async v => { s.orderPrefix = v.trim(); await save(); updatePreview(); }); t.inputEl.style.width = "120px"; });
+
+      new Setting(stageSub)
+        .setName("总结卡片前缀")
+        .setDesc("总结区卡片的属性值前缀，例如 Retro。留空则使用任务卡片前缀。")
+        .addText(t => { t.setPlaceholder("例：Retro").setValue(s.summaryCardPrefix || "").onChange(async v => { s.summaryCardPrefix = v.trim(); await save(); updatePreview(); }); t.inputEl.style.width = "120px"; });
 
       new Setting(stageSub)
         .setName("分隔符")
@@ -486,9 +500,9 @@ export class TaskKanbanSettingTab extends PluginSettingTab {
         }));
     }
 
-    // ── 3.3 置顶区展开动画 ──────────────────────────────────────
+    // ── 3.3 总结区展开动画 ──────────────────────────────────────
     new Setting(containerEl)
-      .setName("置顶区展开动画")
+      .setName("总结区展开动画")
       .addDropdown(d => {
         d.addOption("slide", "推入推出（从顶部向下挤开）");
         d.addOption("fade", "淡入淡出（附带位移）");

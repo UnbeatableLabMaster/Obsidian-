@@ -14,7 +14,10 @@
       "Bash(git reset:*)",
       "Read(//c/Users/罗宇峰/Desktop/Obsidian 插件开发——数据库看板/**)",
       "Bash(node -e ':*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(claude config:*)",
+      "Read(//c/Users/罗宇峰/.config/claude/**)",
+      "Read(//c/Users/罗宇峰/AppData/Roaming/claude/**)"
     ]
   }
 }

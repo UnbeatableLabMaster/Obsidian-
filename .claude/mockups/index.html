@@ -1,0 +1,1008 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>bases-kanban-view · B2 动效方案对比</title>
+  <style>
+    :root {
+      --bg: #15181f;
+      --panel: rgba(255,255,255,0.05);
+      --border: rgba(255,255,255,0.08);
+      --text: #edf1f7;
+      --muted: #9ba7b8;
+      --accent: #8b5cf6;
+      --accent-2: #a78bfa;
+      --good: #43c59e;
+      --shadow: 0 24px 60px rgba(0,0,0,0.28);
+      --card-shadow: 0 14px 32px rgba(0,0,0,0.26);
+      --radius: 22px;
+      --card-w: 258px;
+      --card-h: 96px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 0% 0%, rgba(139,92,246,0.16), transparent 28%),
+        radial-gradient(circle at 100% 0%, rgba(67,197,158,0.10), transparent 24%),
+        linear-gradient(180deg, #101218 0%, var(--bg) 100%);
+    }
+
+    .page {
+      width: min(1440px, calc(100vw - 36px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+
+    .hero,
+    .option,
+    .summary {
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(10px);
+    }
+
+    .hero {
+      border-radius: 28px;
+      padding: 28px 30px;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 32px;
+      line-height: 1.08;
+      letter-spacing: -0.03em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.75;
+      max-width: 1040px;
+    }
+
+    .goal-row,
+    .compare-row,
+    .metric-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .goal-row,
+    .compare-row {
+      margin-top: 18px;
+    }
+
+    .goal,
+    .compare-pill,
+    .metric {
+      border-radius: 999px;
+      padding: 9px 14px;
+      font-size: 13px;
+      border: 1px solid rgba(139,92,246,0.22);
+      background: rgba(139,92,246,0.10);
+      color: #efe7ff;
+    }
+
+    .compare-pill strong,
+    .metric strong {
+      color: #fff;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      margin-top: 22px;
+    }
+
+    .option {
+      border-radius: var(--radius);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .option.recommended {
+      border-color: rgba(139,92,246,0.42);
+      box-shadow: 0 26px 64px rgba(77, 46, 151, 0.25);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 16px 18px 0;
+    }
+
+    .scheme-tag,
+    .recommend-tag {
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .scheme-tag {
+      background: rgba(255,255,255,0.08);
+      color: #eef2f7;
+    }
+
+    .recommend-tag {
+      background: rgba(67,197,158,0.15);
+      color: #a4f1d1;
+    }
+
+    .content {
+      padding: 10px 18px 18px;
+    }
+
+    .content h2 {
+      margin: 8px 0 8px;
+      font-size: 23px;
+      letter-spacing: -0.02em;
+    }
+
+    .content p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.75;
+    }
+
+    .metric-row {
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .metric {
+      padding: 6px 10px;
+      font-size: 12px;
+      color: #d7dfeb;
+      border-color: rgba(255,255,255,0.06);
+      background: rgba(255,255,255,0.05);
+    }
+
+    .preview {
+      position: relative;
+      height: 344px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.05);
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.12));
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    .preview::after {
+      content: "";
+      position: absolute;
+      inset: auto -20% -84px -20%;
+      height: 148px;
+      background: radial-gradient(circle, rgba(139,92,246,0.10), transparent 65%);
+      pointer-events: none;
+    }
+
+    .board-title {
+      position: absolute;
+      left: 14px;
+      top: 12px;
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .lane {
+      position: absolute;
+      inset: 42px 14px 14px;
+      border-radius: 16px;
+      border: 1px dashed rgba(255,255,255,0.07);
+      background: rgba(0,0,0,0.11);
+      padding: 14px;
+    }
+
+    .lane-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #dfe5ee;
+    }
+
+    .pill {
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(139,92,246,0.12);
+      color: #ded1ff;
+      border: 1px solid rgba(139,92,246,0.22);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .list-card {
+      position: relative;
+      z-index: 1;
+      height: 42px;
+      border-radius: 12px;
+      background: #242933;
+      border: 1px solid rgba(255,255,255,0.05);
+      display: flex;
+      align-items: center;
+      padding: 0 14px;
+      color: #cfd7e4;
+      font-size: 13px;
+      margin-bottom: 10px;
+    }
+
+    .list-card.insert-target {
+      border-color: rgba(139,92,246,0.24);
+      box-shadow: inset 0 0 0 1px rgba(139,92,246,0.08);
+    }
+
+    .list-card.insert-target::after {
+      content: "";
+      position: absolute;
+      inset: -2px;
+      border-radius: 13px;
+      border: 1px solid rgba(139,92,246,0.20);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .insertion-line {
+      height: 10px;
+      margin: 14px 0;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(139,92,246,0.22), rgba(139,92,246,0.9), rgba(139,92,246,0.22));
+      box-shadow: 0 0 0 4px rgba(139,92,246,0.08);
+      animation: insertion-pulse 3200ms ease-in-out infinite;
+    }
+
+    .stack-zone {
+      position: absolute;
+      width: 320px;
+      height: 192px;
+      left: 50%;
+      top: 54%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 4;
+    }
+
+    .drag-flow {
+      position: absolute;
+      inset: 0;
+    }
+
+    .drag-card {
+      position: absolute;
+      left: 54px;
+      width: var(--card-w);
+      height: var(--card-h);
+      border-radius: 16px;
+      background: linear-gradient(180deg, #f8f5ff 0%, #f1ecff 100%);
+      color: #241d38;
+      border: 1px solid rgba(139,92,246,0.22);
+      box-shadow: var(--card-shadow);
+      overflow: hidden;
+    }
+
+    .drag-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 5px;
+      background: linear-gradient(180deg, #8b5cf6, #7c3aed);
+    }
+
+    .drag-card .title {
+      font-size: 15px;
+      font-weight: 800;
+      padding: 16px 16px 8px 20px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .drag-card.has-badge .title {
+      padding-right: 58px;
+    }
+
+    .drag-card .meta {
+      padding: 0 16px 0 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .drag-card .meta span {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(139,92,246,0.08);
+      color: #6449b2;
+      font-weight: 600;
+    }
+
+    .drag-card .card-badge {
+      position: absolute;
+      right: -1px;
+      top: -1px;
+      min-width: 24px;
+      height: 22px;
+      padding: 0 6px;
+      border-radius: 0 16px 0 12px;
+      background: linear-gradient(180deg, #8b5cf6, #6d28d9);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 800;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-left: 1px solid rgba(124,58,237,0.32);
+      border-bottom: 1px solid rgba(124,58,237,0.32);
+      box-shadow: 0 6px 14px rgba(89, 55, 173, 0.24);
+      z-index: 12;
+      animation: badge-pulse 3200ms ease-in-out infinite;
+    }
+
+    .card-back-1,
+    .card-back-2,
+    .card-front {
+      left: 54px;
+    }
+
+    .card-back-1 {
+      top: 82px;
+      opacity: 0.22;
+      transform: scale(0.94);
+      filter: saturate(0.78);
+    }
+
+    .card-back-2 {
+      top: 56px;
+      opacity: 0.48;
+      transform: scale(0.975);
+    }
+
+    .card-front {
+      top: 28px;
+      z-index: 5;
+      box-shadow: 0 18px 36px rgba(58, 30, 120, 0.28);
+    }
+
+    .stack-zone::before {
+      content: "";
+      position: absolute;
+      left: 52px;
+      top: 22px;
+      width: 264px;
+      height: 126px;
+      border-radius: 20px;
+      background: radial-gradient(circle at center, rgba(139,92,246,0.20), transparent 72%);
+      filter: blur(12px);
+      z-index: 1;
+    }
+
+    .drag-flow::after {
+      position: absolute;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #efe7ff;
+      background: rgba(20, 24, 31, 0.62);
+      border: 1px solid rgba(139,92,246,0.18);
+      animation: flow-label 3200ms ease-in-out infinite;
+      z-index: 2;
+    }
+
+    .note-flag {
+      position: absolute;
+      left: 16px;
+      bottom: 16px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #e8defe;
+      background: rgba(139,92,246,0.14);
+      border: 1px solid rgba(139,92,246,0.22);
+      z-index: 6;
+    }
+
+    .flow-preview .drag-flow::before {
+      content: "";
+      position: absolute;
+      left: 34px;
+      top: 114px;
+      width: 234px;
+      height: 10px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(139,92,246,0), rgba(139,92,246,0.22), rgba(139,92,246,0.82), rgba(139,92,246,0));
+      filter: blur(1px);
+      animation: ghost-ribbon 3200ms ease-in-out infinite;
+      z-index: 2;
+    }
+
+    .flow-preview .drag-flow::after {
+      content: "轨迹并轨";
+      left: 44px;
+      top: 128px;
+    }
+
+    .flow-preview .card-back-1 {
+      animation: flow-back-1 3200ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
+
+    .flow-preview .card-back-2 {
+      animation: flow-back-2 3200ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
+
+    .flow-preview .card-front {
+      animation: flow-front 3200ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
+
+    .settle-preview .drag-flow::before {
+      content: "";
+      position: absolute;
+      left: 44px;
+      top: 38px;
+      width: 250px;
+      height: 122px;
+      border-radius: 18px;
+      border: 1px dashed rgba(139,92,246,0.24);
+      background: linear-gradient(180deg, rgba(139,92,246,0.06), rgba(139,92,246,0));
+      animation: settle-frame 3200ms ease-in-out infinite;
+      z-index: 2;
+    }
+
+    .settle-preview .drag-flow::after {
+      content: "整批落稳";
+      left: 56px;
+      top: 128px;
+    }
+
+    .settle-preview .card-back-1 {
+      animation: settle-back-1 3200ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
+
+    .settle-preview .card-back-2 {
+      animation: settle-back-2 3200ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
+
+    .settle-preview .card-front {
+      animation: settle-front 3200ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
+
+    .settle-preview .list-card.insert-target::after {
+      animation: slot-outline 3200ms ease-in-out infinite;
+    }
+
+    .slot-preview .drag-flow::before {
+      content: "";
+      position: absolute;
+      left: 34px;
+      top: 126px;
+      width: 232px;
+      height: 28px;
+      border-radius: 14px;
+      background: linear-gradient(90deg, rgba(139,92,246,0.04), rgba(139,92,246,0.18), rgba(139,92,246,0.04));
+      border: 1px solid rgba(139,92,246,0.16);
+      animation: slot-pad 3200ms ease-in-out infinite;
+      z-index: 2;
+    }
+
+    .slot-preview .drag-flow::after {
+      content: "卡槽吸附";
+      left: 44px;
+      top: 160px;
+    }
+
+    .slot-preview .card-back-1 {
+      animation: slot-back-1 3200ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
+
+    .slot-preview .card-back-2 {
+      animation: slot-back-2 3200ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
+
+    .slot-preview .card-front {
+      animation: slot-front 3200ms cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
+
+    .slot-preview .list-card.insert-target::after {
+      animation: slot-outline 3200ms ease-in-out infinite;
+    }
+
+    @keyframes insertion-pulse {
+      0%, 30% {
+        box-shadow: 0 0 0 4px rgba(139,92,246,0.04);
+        background: linear-gradient(90deg, rgba(139,92,246,0.16), rgba(139,92,246,0.52), rgba(139,92,246,0.16));
+      }
+      58%, 82% {
+        box-shadow: 0 0 0 6px rgba(139,92,246,0.14);
+        background: linear-gradient(90deg, rgba(139,92,246,0.28), rgba(139,92,246,0.95), rgba(139,92,246,0.28));
+      }
+      100% {
+        box-shadow: 0 0 0 4px rgba(139,92,246,0.08);
+        background: linear-gradient(90deg, rgba(139,92,246,0.22), rgba(139,92,246,0.9), rgba(139,92,246,0.22));
+      }
+    }
+
+    @keyframes badge-pulse {
+      0%, 38% {
+        transform: scale(0.94);
+      }
+      58%, 82% {
+        transform: scale(1.02);
+      }
+      100% {
+        transform: scale(1);
+      }
+    }
+
+    @keyframes flow-label {
+      0%, 24% {
+        opacity: 0.62;
+      }
+      58%, 82% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0.82;
+      }
+    }
+
+    @keyframes flow-front {
+      0% {
+        transform: translate(-44px, 8px) scale(0.94);
+        opacity: 0;
+      }
+      16% {
+        opacity: 1;
+      }
+      38% {
+        transform: translate(-12px, 2px) scale(1);
+      }
+      62%, 100% {
+        transform: translate(0, 0) scale(1);
+        opacity: 1;
+      }
+    }
+
+    @keyframes flow-back-2 {
+      0% {
+        transform: translate(-36px, 10px) scale(0.94);
+        opacity: 0;
+      }
+      18% {
+        opacity: 0.22;
+      }
+      42% {
+        transform: translate(-14px, 3px) scale(0.97);
+      }
+      62%, 100% {
+        transform: translate(0, 0) scale(0.975);
+        opacity: 0.48;
+      }
+    }
+
+    @keyframes flow-back-1 {
+      0% {
+        transform: translate(-28px, 12px) scale(0.90);
+        opacity: 0;
+      }
+      18% {
+        opacity: 0.14;
+      }
+      42% {
+        transform: translate(-10px, 4px) scale(0.92);
+      }
+      62%, 100% {
+        transform: translate(0, 0) scale(0.94);
+        opacity: 0.22;
+      }
+    }
+
+    @keyframes ghost-ribbon {
+      0% {
+        opacity: 0;
+        transform: translateX(-28px) scaleX(0.55);
+      }
+      26% {
+        opacity: 0.9;
+      }
+      58% {
+        opacity: 1;
+        transform: translateX(0) scaleX(1);
+      }
+      100% {
+        opacity: 0.48;
+        transform: translateX(0) scaleX(1);
+      }
+    }
+
+    @keyframes settle-front {
+      0% {
+        transform: translate(-12px, -26px) scale(1.015);
+        opacity: 0;
+      }
+      14% {
+        opacity: 1;
+      }
+      40% {
+        transform: translate(-4px, -8px) scale(1.005);
+      }
+      62% {
+        transform: translate(0, 0) scale(1);
+      }
+      74% {
+        transform: translate(0, 4px) scale(0.995);
+      }
+      86%, 100% {
+        transform: translate(0, 0) scale(1);
+        opacity: 1;
+      }
+    }
+
+    @keyframes settle-back-2 {
+      0% {
+        transform: translate(-10px, -24px) scale(0.985);
+        opacity: 0;
+      }
+      14% {
+        opacity: 0.16;
+      }
+      40% {
+        transform: translate(-3px, -8px) scale(0.98);
+      }
+      62%, 100% {
+        transform: translate(0, 0) scale(0.975);
+        opacity: 0.48;
+      }
+    }
+
+    @keyframes settle-back-1 {
+      0% {
+        transform: translate(-8px, -22px) scale(0.95);
+        opacity: 0;
+      }
+      14% {
+        opacity: 0.10;
+      }
+      40% {
+        transform: translate(-2px, -8px) scale(0.945);
+      }
+      62%, 100% {
+        transform: translate(0, 0) scale(0.94);
+        opacity: 0.22;
+      }
+    }
+
+    @keyframes settle-frame {
+      0%, 22% {
+        opacity: 0;
+        transform: scale(0.96);
+      }
+      46% {
+        opacity: 0.72;
+      }
+      62%, 100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
+    @keyframes slot-front {
+      0% {
+        transform: translate(-22px, 12px) scale(0.96);
+        opacity: 0;
+      }
+      16% {
+        opacity: 1;
+      }
+      38% {
+        transform: translate(-8px, 4px) scale(0.99);
+      }
+      58% {
+        transform: translate(0, 0) scale(1);
+      }
+      74% {
+        transform: translate(0, 2px) scale(0.992);
+      }
+      88%, 100% {
+        transform: translate(0, 0) scale(1);
+        opacity: 1;
+      }
+    }
+
+    @keyframes slot-back-2 {
+      0% {
+        transform: translate(-18px, 10px) scale(0.955);
+        opacity: 0;
+      }
+      16% {
+        opacity: 0.20;
+      }
+      38% {
+        transform: translate(-6px, 4px) scale(0.97);
+      }
+      58%, 100% {
+        transform: translate(0, 0) scale(0.975);
+        opacity: 0.48;
+      }
+    }
+
+    @keyframes slot-back-1 {
+      0% {
+        transform: translate(-16px, 8px) scale(0.915);
+        opacity: 0;
+      }
+      16% {
+        opacity: 0.12;
+      }
+      38% {
+        transform: translate(-5px, 4px) scale(0.93);
+      }
+      58%, 100% {
+        transform: translate(0, 0) scale(0.94);
+        opacity: 0.22;
+      }
+    }
+
+    @keyframes slot-pad {
+      0%, 24% {
+        opacity: 0.30;
+        transform: scaleX(0.82);
+      }
+      58% {
+        opacity: 1;
+        transform: scaleX(1);
+      }
+      100% {
+        opacity: 0.72;
+        transform: scaleX(1);
+      }
+    }
+
+    @keyframes slot-outline {
+      0%, 24% {
+        opacity: 0;
+      }
+      58% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0.56;
+      }
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 18px;
+      color: #d2d9e5;
+      font-size: 13px;
+      line-height: 1.75;
+    }
+
+    li + li { margin-top: 6px; }
+
+    .summary {
+      margin-top: 22px;
+      border-radius: 22px;
+      border-color: rgba(139,92,246,0.22);
+      padding: 20px 22px;
+    }
+
+    .summary h3 {
+      margin: 0 0 10px;
+      font-size: 20px;
+    }
+
+    .summary p {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.8;
+      color: #e0d7ff;
+    }
+
+    .footnote {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    @media (max-width: 1180px) {
+      .grid { grid-template-columns: 1fr; }
+      .preview { height: 350px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <h1>B2 焦点阶梯的 3 个动效方向</h1>
+      <p class="subtitle">静态外观先固定：三张卡保持竖直对齐，数量角标缩小后嵌入前卡右上角边框。现在只比较“动起来时用户会怎么理解”——不是比谁更花，而是比谁最直观地传达这批卡会一次性并入目标列，并且不会落地后再跳一下。</p>
+      <div class="goal-row">
+        <div class="goal">保留批次内部顺序</div>
+        <div class="goal">让目标落点比当前版本更直观</div>
+        <div class="goal">强调“一次落稳”，不是二次重排</div>
+      </div>
+      <div class="compare-row">
+        <div class="compare-pill"><strong>B2-A</strong> 轨迹并轨</div>
+        <div class="compare-pill"><strong>B2-B</strong> 整批落稳</div>
+        <div class="compare-pill"><strong>B2-C</strong> 卡槽吸附</div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="option">
+        <div class="topbar">
+          <span class="scheme-tag">B2-A · 轨迹并轨</span>
+          <span class="scheme-tag">提取感最强</span>
+        </div>
+        <div class="content">
+          <h2>先看到“被拖出来”，再看到“并进去”</h2>
+          <p>强化拖拽轨迹本身。前卡先被提起，后两层跟着形成残影，并在插入位前汇成一条带状轨迹。它最能表达“这是一批正在移动的卡”。</p>
+          <div class="metric-row">
+            <span class="metric"><strong>直观度：</strong>中高</span>
+            <span class="metric"><strong>拖拽感：</strong>最高</span>
+            <span class="metric"><strong>稳定感：</strong>中</span>
+          </div>
+          <div class="preview flow-preview">
+            <div class="board-title">Preview</div>
+            <div class="lane">
+              <div class="lane-header"><span>目标列 · Doing</span><span class="pill">自动排序开启</span></div>
+              <div class="list-card">现有卡片 · 需求梳理</div>
+              <div class="insertion-line"></div>
+              <div class="list-card insert-target">现有卡片 · 接口联调</div>
+              <div class="list-card">现有卡片 · 验收清单</div>
+            </div>
+            <div class="stack-zone">
+              <div class="drag-flow"></div>
+              <div class="drag-card card-back-1">
+                <div class="title">补充边界条件</div>
+                <div class="meta"><span>第 1 张</span></div>
+              </div>
+              <div class="drag-card card-back-2">
+                <div class="title">整理字段映射</div>
+                <div class="meta"><span>第 2 张</span></div>
+              </div>
+              <div class="drag-card card-front has-badge">
+                <div class="card-badge">+6</div>
+                <div class="title">修复多选拖拽闪烁</div>
+                <div class="meta"><span>优先级 P1</span><span>第 3 张</span></div>
+              </div>
+            </div>
+            <div class="note-flag">特点：用户容易感觉“这一摞正在移动”</div>
+          </div>
+          <ul>
+            <li>优点：提取动作最明显，拖拽行为本身很好懂。</li>
+            <li>优点：适合强调“不是单张，而是一批卡”。</li>
+            <li>缺点：落点虽然比当前版清楚，但还是偏“过程感”，不如卡槽方案直接。</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="option">
+        <div class="topbar">
+          <span class="scheme-tag">B2-B · 整批落稳</span>
+          <span class="scheme-tag">稳定感最强</span>
+        </div>
+        <div class="content">
+          <h2>把重点放在“这一批一次落稳”</h2>
+          <p>目标位先出现一个轻框，整批卡从上方一起落进这个框里，随后只做一次很轻的缓冲回弹。它直说一件事：不是先插进去再跳，而是整批直接落定。</p>
+          <div class="metric-row">
+            <span class="metric"><strong>直观度：</strong>高</span>
+            <span class="metric"><strong>稳定感：</strong>最高</span>
+            <span class="metric"><strong>原生感：</strong>高</span>
+          </div>
+          <div class="preview settle-preview">
+            <div class="board-title">Preview</div>
+            <div class="lane">
+              <div class="lane-header"><span>目标列 · Doing</span><span class="pill">自动排序开启</span></div>
+              <div class="list-card">现有卡片 · 需求梳理</div>
+              <div class="insertion-line"></div>
+              <div class="list-card insert-target">现有卡片 · 接口联调</div>
+              <div class="list-card">现有卡片 · 验收清单</div>
+            </div>
+            <div class="stack-zone">
+              <div class="drag-flow"></div>
+              <div class="drag-card card-back-1">
+                <div class="title">补充边界条件</div>
+                <div class="meta"><span>第 1 张</span></div>
+              </div>
+              <div class="drag-card card-back-2">
+                <div class="title">整理字段映射</div>
+                <div class="meta"><span>第 2 张</span></div>
+              </div>
+              <div class="drag-card card-front has-badge">
+                <div class="card-badge">+6</div>
+                <div class="title">修复多选拖拽闪烁</div>
+                <div class="meta"><span>优先级 P1</span><span>第 3 张</span></div>
+              </div>
+            </div>
+            <div class="note-flag">特点：最像“整批放下去就稳住”</div>
+          </div>
+          <ul>
+            <li>优点：最适合承接“修复闪烁”这个真实问题，语义直接。</li>
+            <li>优点：动效克制，比较接近默认长期使用的气质。</li>
+            <li>缺点：拖拽路径信息偏弱，用户更容易感知“落稳”，不一定第一眼感知“吸入目标位”。</li>
+          </ul>
+        </div>
+      </article>
+
+      <article class="option recommended">
+        <div class="topbar">
+          <span class="scheme-tag">B2-C · 卡槽吸附</span>
+          <span class="recommend-tag">当前最推荐</span>
+        </div>
+        <div class="content">
+          <h2>先出现目标槽，再把整批吸进去</h2>
+          <p>插入线先扩成一个柔和的“卡槽”，然后整批卡被吸附进去，最后只保留极轻的收束。这个方案最直观，因为用户会先看到“要落在哪里”，再看到“怎么落进去”。</p>
+          <div class="metric-row">
+            <span class="metric"><strong>直观度：</strong>最高</span>
+            <span class="metric"><strong>融合感：</strong>最高</span>
+            <span class="metric"><strong>稳定感：</strong>高</span>
+          </div>
+          <div class="preview slot-preview">
+            <div class="board-title">Preview</div>
+            <div class="lane">
+              <div class="lane-header"><span>目标列 · Doing</span><span class="pill">自动排序开启</span></div>
+              <div class="list-card">现有卡片 · 需求梳理</div>
+              <div class="insertion-line"></div>
+              <div class="list-card insert-target">现有卡片 · 接口联调</div>
+              <div class="list-card">现有卡片 · 验收清单</div>
+            </div>
+            <div class="stack-zone">
+              <div class="drag-flow"></div>
+              <div class="drag-card card-back-1">
+                <div class="title">补充边界条件</div>
+                <div class="meta"><span>第 1 张</span></div>
+              </div>
+              <div class="drag-card card-back-2">
+                <div class="title">整理字段映射</div>
+                <div class="meta"><span>第 2 张</span></div>
+              </div>
+              <div class="drag-card card-front has-badge">
+                <div class="card-badge">+6</div>
+                <div class="title">修复多选拖拽闪烁</div>
+                <div class="meta"><span>优先级 P1</span><span>第 3 张</span></div>
+              </div>
+            </div>
+            <div class="note-flag">特点：先给目标位，再给吸附落位</div>
+          </div>
+          <ul>
+            <li>优点：目标落点最清楚，最适合解决你说的“还不够直观”。</li>
+            <li>优点：既保留 B2 的稳重气质，又把“自然并入目标列”说得最清楚。</li>
+            <li>缺点：如果正式实现时高亮范围过大，会稍微偏 UI 提示，而不是纯拖拽反馈。</li>
+          </ul>
+        </div>
+      </article>
+    </section>
+
+    <section class="summary">
+      <h3>当前判断</h3>
+      <p>如果目标是把“落点在哪里、为何不会闪、为何是整批并入”一次讲清，我建议优先收敛到 <strong>B2-C 卡槽吸附</strong>。如果你更看重“修复闪烁”这件事本身的表达，<strong>B2-B 整批落稳</strong> 也很强。B2-A 更适合作为强调拖拽过程感的备选，不是最适合当前问题语义的主方案。</p>
+      <div class="footnote">刷新同一个地址即可查看更新后的页面：<strong>http://localhost:57364</strong>。这一版已经把角标数字缩小，并嵌进前卡右上角边框。你选定后，我下一步就把对应动效语义和“自动排序开启时多选跨列落地无闪烁”的行为方案合成正式设计。</div>
+    </section>
+  </main>
+</body>
+</html>

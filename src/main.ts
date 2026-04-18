@@ -2,6 +2,7 @@ import { Plugin, TFile, Modal, Setting, Notice, Menu, App } from "obsidian";
 import * as obsidian from "obsidian";
 import Sortable from "sortablejs";
 import { TaskKanbanSettingTab, PluginSettings, DEFAULT_SETTINGS, MetaTagConfig, GlobalMetaStyle } from "./settings";
+import { applyMultiDragFinalOrderToIds, getMultiDragPreviewIds, getMultiDragVisibleDepth, runMultiDragCommitPhases } from "./multidrag-order";
 
 const BasesView = (obsidian as any).BasesView;
 
@@ -171,10 +172,10 @@ class MetaConfigModal extends Modal {
 
         const tabsContainer = headerArea.createDiv("kanban-meta-tabs");
         const normalTab = tabsContainer.createDiv({ cls: "kanban-meta-tab is-active", text: "常规区标签" });
-        const pinnedTab = tabsContainer.createDiv({ cls: "kanban-meta-tab", text: "总结区标签" });
+        const summaryTab = tabsContainer.createDiv({ cls: "kanban-meta-tab", text: "总结区标签" });
 
-        normalTab.onclick = () => { this.activeTab = 'normal'; normalTab.addClass("is-active"); pinnedTab.removeClass("is-active"); this.renderList(); };
-        pinnedTab.onclick = () => { this.activeTab = 'pinned'; pinnedTab.addClass("is-active"); normalTab.removeClass("is-active"); this.renderList(); };
+        normalTab.onclick = () => { this.activeTab = 'normal'; normalTab.addClass("is-active"); summaryTab.removeClass("is-active"); this.renderList(); };
+        summaryTab.onclick = () => { this.activeTab = 'pinned'; summaryTab.addClass("is-active"); normalTab.removeClass("is-active"); this.renderList(); };
 
         contentEl.createEl("p", { text: "颜色、边框等高级UI样式设置在全库打通，只需修改一次即全局生效。", cls: "kanban-meta-desc" });
         this.listContainer = contentEl.createDiv("kanban-meta-list");
@@ -277,6 +278,232 @@ class ConfirmModal extends Modal {
         setting.addButton((btn: any) => btn.setButtonText("确认").setCta().onClick(() => { this.close(); this.onConfirm(); }));
     }
     onClose() { this.contentEl.empty(); }
+}
+
+/* ========================================================= */
+/* 🌟 v1.1.0: 任务关联管理弹窗 */
+/* ========================================================= */
+class TaskAssociationModal extends Modal {
+    private sortableInstance: any = null;
+
+    constructor(app: App, private view: KanbanView, private summaryCard: CardData) { super(app); }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.addClass("kanban-task-association-modal");
+        contentEl.createEl("h2", { text: `管理关联任务 - ${this.summaryCard.title}` });
+        contentEl.createEl("p", { text: "选择要关联到此总结卡片的任务卡片", attr: { style: "color: var(--text-muted); margin-bottom: 8px;" } });
+
+        const vc = this.view.plugin.settings.virtualCards.find((v: any) => v.id === this.summaryCard.id);
+        const associatedIds = vc?.associatedTaskIds || [];
+
+        // ✅ v1.1.0-alpha.2: 添加搜索筛选输入框
+        const searchContainer = contentEl.createDiv({ cls: "kanban-task-search" });
+        searchContainer.style.cssText = "margin-bottom: 12px;";
+        const searchInput = searchContainer.createEl("input", { type: "text", placeholder: "搜索任务卡片..." });
+        searchInput.style.cssText = "width: 100%; padding: 8px 12px; border: 1px solid var(--background-modifier-border); border-radius: 6px; background: var(--background-primary); color: var(--text-normal); font-size: 13px;";
+
+        const listContainer = contentEl.createDiv({ cls: "kanban-task-list" });
+        listContainer.style.cssText = "max-height: 400px; overflow-y: auto; margin-bottom: 16px; border: 1px solid var(--background-modifier-border); border-radius: 6px; padding: 8px;";
+
+        // 获取当前列的所有任务卡片（非总结卡片）
+        const allCards = this.view.plugin.settings.virtualCards.filter((v: any) =>
+            v.column === this.summaryCard.column && !v.pinned && v.id !== this.summaryCard.id
+        );
+
+        const renderList = (filterText: string = "") => {
+            listContainer.empty();
+            const filteredCards = filterText ? allCards.filter((card: any) =>
+                card.title.toLowerCase().includes(filterText.toLowerCase())
+            ) : allCards;
+
+            if (filteredCards.length === 0) {
+                listContainer.createEl("p", { text: "无匹配的任务卡片", attr: { style: "color: var(--text-muted); text-align: center; padding: 20px 0;" } });
+                return;
+            }
+
+            filteredCards.forEach((card: any) => {
+                const isAssociated = associatedIds.includes(card.id);
+                const row = listContainer.createDiv({ cls: "kanban-task-row" });
+                row.dataset.cardId = card.id;
+                row.style.cssText = "display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--background-secondary); border-radius: 4px; margin-bottom: 4px; cursor: pointer; transition: background 0.2s;";
+                row.onmouseenter = () => { row.style.background = "var(--background-modifier-hover)"; };
+                row.onmouseleave = () => { row.style.background = "var(--background-secondary)"; };
+
+                const checkbox = row.createEl("input", { type: "checkbox" });
+                checkbox.checked = isAssociated;
+                checkbox.style.cssText = "cursor: pointer;";
+                checkbox.onchange = (e: Event) => {
+                    e.stopPropagation();
+                    if (checkbox.checked) {
+                        if (!associatedIds.includes(card.id)) associatedIds.push(card.id);
+                    } else {
+                        const idx = associatedIds.indexOf(card.id);
+                        if (idx > -1) associatedIds.splice(idx, 1);
+                    }
+                };
+
+                row.createEl("span", { text: card.title, attr: { style: "flex: 1;" } });
+
+                // 点击行也能切换复选框
+                row.onclick = (e: MouseEvent) => {
+                    if ((e.target as HTMLElement).tagName !== 'INPUT') {
+                        checkbox.checked = !checkbox.checked;
+                        checkbox.onchange?.(new Event('change'));
+                    }
+                };
+            });
+        };
+
+        // 搜索输入事件
+        searchInput.oninput = () => {
+            renderList(searchInput.value);
+        };
+
+        renderList();
+
+        const btnContainer = contentEl.createDiv({ cls: "kanban-modal-btns" });
+        btnContainer.style.cssText = "display: flex; justify-content: flex-end; gap: 8px;";
+
+        const cancelBtn = btnContainer.createEl("button", { text: "取消" });
+        cancelBtn.onclick = () => this.close();
+
+        const saveBtn = btnContainer.createEl("button", { text: "保存", cls: "mod-cta" });
+        saveBtn.onclick = async () => {
+            if (vc) {
+                vc.associatedTaskIds = associatedIds;
+                // 更新关联任务的引用信息
+                associatedIds.forEach((taskId: string, index: number) => {
+                    const taskCard = this.view.plugin.settings.virtualCards.find((v: any) => v.id === taskId);
+                    if (taskCard) {
+                        taskCard.summaryCardId = this.summaryCard.id;
+                        taskCard.summaryOrder = index + 1;
+                    }
+                });
+                // 清除未关联任务的引用
+                this.view.plugin.settings.virtualCards.forEach((v: any) => {
+                    if (v.summaryCardId === this.summaryCard.id && !associatedIds.includes(v.id)) {
+                        delete v.summaryCardId;
+                        delete v.summaryOrder;
+                    }
+                });
+                await this.view.plugin.saveSettings(true);
+                this.close();
+            }
+        };
+    }
+
+    onClose() {
+        if (this.sortableInstance) {
+            this.sortableInstance.destroy();
+            this.sortableInstance = null;
+        }
+        this.contentEl.empty();
+    }
+}
+
+/* ========================================================= */
+/* 🌟 v1.1.0: 任务排序管理弹窗（侧边栏样式）*/
+/* ========================================================= */
+class TaskSortingModal extends Modal {
+    private sortableInstance: any = null;
+
+    constructor(app: App, private view: KanbanView, private summaryCard: CardData) { super(app); }
+
+    onOpen() {
+        const { contentEl, modalEl } = this;
+        modalEl.addClass("kanban-task-sorting-modal");
+        modalEl.style.cssText = "position: fixed; right: 0; top: 0; bottom: 0; width: 400px; max-width: 90vw; margin: 0; transform: none;";
+        contentEl.style.cssText = "height: 100%; display: flex; flex-direction: column;";
+
+        const header = contentEl.createDiv({ cls: "modal-header" });
+        header.style.cssText = "padding: 16px; border-bottom: 1px solid var(--background-modifier-border); flex-shrink: 0;";
+        header.createEl("h2", { text: `排序关联任务`, attr: { style: "margin: 0 0 4px 0;" } });
+        header.createEl("p", { text: this.summaryCard.title, attr: { style: "margin: 0; color: var(--text-muted); font-size: 13px;" } });
+
+        const body = contentEl.createDiv({ cls: "modal-body" });
+        body.style.cssText = "flex: 1; overflow-y: auto; padding: 16px;";
+
+        const vc = this.view.plugin.settings.virtualCards.find((v: any) => v.id === this.summaryCard.id);
+        const associatedIds = vc?.associatedTaskIds || [];
+
+        if (associatedIds.length === 0) {
+            body.createEl("p", { text: "暂无关联任务", attr: { style: "color: var(--text-muted); text-align: center; padding: 40px 0;" } });
+        } else {
+            const listContainer = body.createDiv({ cls: "kanban-task-sort-list" });
+            listContainer.style.cssText = "display: flex; flex-direction: column; gap: 8px;";
+
+            associatedIds.forEach((taskId: string, index: number) => {
+                const taskCard = this.view.plugin.settings.virtualCards.find((v: any) => v.id === taskId);
+                if (taskCard) {
+                    const row = listContainer.createDiv({ cls: "kanban-task-sort-row" });
+                    row.dataset.taskId = taskId;
+                    row.style.cssText = "display: flex; align-items: center; gap: 8px; padding: 12px; background: var(--background-secondary); border-radius: 6px; cursor: grab;";
+
+                    const handle = row.createDiv({ cls: "drag-handle" });
+                    handle.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none"><circle cx="9" cy="5" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="19" r="1"></circle><circle cx="15" cy="5" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="19" r="1"></circle></svg>`;
+                    handle.style.cssText = "color: var(--text-faint); flex-shrink: 0;";
+
+                    const orderBadge = row.createDiv({ text: String(index + 1).padStart(2, '0') });
+                    orderBadge.style.cssText = "width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: var(--interactive-accent); color: white; border-radius: 4px; font-size: 12px; font-weight: 600; flex-shrink: 0;";
+
+                    row.createEl("span", { text: taskCard.title, attr: { style: "flex: 1;" } });
+                }
+            });
+
+            // 初始化 Sortable
+            const Sortable = (window as any).Sortable;
+            if (Sortable) {
+                this.sortableInstance = new Sortable(listContainer, {
+                    animation: 150,
+                    handle: '.drag-handle',
+                    onEnd: () => {
+                        // 更新排序
+                        const rows = Array.from(listContainer.querySelectorAll('.kanban-task-sort-row')) as HTMLElement[];
+                        rows.forEach((row, index) => {
+                            const badge = row.querySelector('div:nth-child(2)') as HTMLElement;
+                            if (badge) badge.textContent = String(index + 1).padStart(2, '0');
+                        });
+                    }
+                });
+            }
+        }
+
+        const footer = contentEl.createDiv({ cls: "modal-footer" });
+        footer.style.cssText = "padding: 16px; border-top: 1px solid var(--background-modifier-border); display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0;";
+
+        const closeBtn = footer.createEl("button", { text: "关闭" });
+        closeBtn.onclick = () => this.close();
+
+        const saveBtn = footer.createEl("button", { text: "保存排序", cls: "mod-cta" });
+        saveBtn.onclick = async () => {
+            if (vc) {
+                const listContainer = body.querySelector('.kanban-task-sort-list');
+                if (listContainer) {
+                    const rows = Array.from(listContainer.querySelectorAll('.kanban-task-sort-row')) as HTMLElement[];
+                    const newOrder = rows.map(row => row.dataset.taskId!);
+                    vc.associatedTaskIds = newOrder;
+
+                    // 更新任务卡片的排序编号
+                    newOrder.forEach((taskId, index) => {
+                        const taskCard = this.view.plugin.settings.virtualCards.find((v: any) => v.id === taskId);
+                        if (taskCard) taskCard.summaryOrder = index + 1;
+                    });
+
+                    await this.view.plugin.saveSettings(true);
+                }
+                this.close();
+            }
+        };
+    }
+
+    onClose() {
+        if (this.sortableInstance) {
+            this.sortableInstance.destroy();
+            this.sortableInstance = null;
+        }
+        this.contentEl.empty();
+    }
 }
 
 /* ========================================================= */
@@ -400,6 +627,21 @@ interface CardData {
     body?: string;
 }
 
+interface RectSnapshot {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+}
+
+interface MultiDragState {
+    orderedIds: string[];
+    sourceRects: Record<string, RectSnapshot>;
+    dragRect: RectSnapshot;
+    pointerOffsetX: number;
+    pointerOffsetY: number;
+}
+
 class KanbanView extends BasesView {
   containerEl: HTMLElement; plugin: TaskKanbanPlugin; boardEl!: HTMLElement; sortables: Sortable[] = []; isDraggingItem: boolean = false;
   savedScroll: { boardX: number, boardY: number, columns: Record<string, number> } = { boardX: 0, boardY: 0, columns: {} };
@@ -410,6 +652,10 @@ class KanbanView extends BasesView {
   lastSelectedCardId: string | null = null;
   private _dragOriginalOrder: string[] = []; // 保存拖拽前的原始顺序
   private _savedProgress: Record<string, number> = {}; // 保存重建前的进度条宽度，用于平滑过渡
+  private _multiDragState: MultiDragState | null = null;
+  private _suspendRerender: boolean = false;
+  private _dragSlotEl: HTMLElement | null = null;
+  private _dragSlotContainer: HTMLElement | null = null;
 
   constructor(controller: any, scrollEl: HTMLElement, plugin: TaskKanbanPlugin) { super(controller); this.plugin = plugin; this.containerEl = scrollEl.createDiv("kanban-view-container"); }
 
@@ -432,6 +678,16 @@ class KanbanView extends BasesView {
     return fullValue; // 不符合格式则返回原值
   }
 
+  // ✅ v1.1.0: 打开任务关联管理弹窗
+  private openTaskAssociationModal(summaryCard: CardData) {
+    new TaskAssociationModal(this.app, this, summaryCard).open();
+  }
+
+  // ✅ v1.1.0: 打开任务排序管理弹窗
+  private openTaskSortingModal(summaryCard: CardData) {
+    new TaskSortingModal(this.app, this, summaryCard).open();
+  }
+
   updateSelectionUI() {
       this.boardEl?.querySelectorAll('.kanban-card').forEach(el => {
           const id = (el as HTMLElement).dataset.id;
@@ -440,7 +696,169 @@ class KanbanView extends BasesView {
       });
   }
 
+  private snapshotRect(el: HTMLElement): RectSnapshot {
+      const rect = el.getBoundingClientRect();
+      return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+  }
+
+  private wait(ms: number) {
+      return new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+  }
+
+  private nextFrame() {
+      return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  }
+
+  private clearMultiDragSlotPreview() {
+      if (this._dragSlotEl) this._dragSlotEl.removeClass('is-multidrag-slot-preview');
+      if (this._dragSlotContainer) this._dragSlotContainer.removeClass('is-multidrag-slot-container');
+      this._dragSlotEl = null;
+      this._dragSlotContainer = null;
+  }
+
+  private updateMultiDragSlotPreview(evt: any, isMultiDrag: boolean) {
+      this.clearMultiDragSlotPreview();
+      if (!isMultiDrag) return;
+      const to = evt.to as HTMLElement | null;
+      const related = evt.related as HTMLElement | null;
+      if (to) {
+          to.addClass('is-multidrag-slot-container');
+          this._dragSlotContainer = to;
+      }
+      if (related && related !== evt.dragged) {
+          related.addClass('is-multidrag-slot-preview');
+          this._dragSlotEl = related;
+      }
+  }
+
+  private createFlyClone(sourceEl: HTMLElement, rect: RectSnapshot) {
+      const clone = sourceEl.cloneNode(true) as HTMLElement;
+      clone.classList.remove('is-selected', 'is-multidrag-source', 'is-multidrag-slot', 'is-multidrag-slot-preview');
+      clone.classList.add('kanban-multidrag-fly-card');
+      clone.style.left = `${rect.left}px`;
+      clone.style.top = `${rect.top}px`;
+      clone.style.width = `${rect.width}px`;
+      clone.style.height = `${rect.height}px`;
+      return clone;
+  }
+
+  private buildMultiDragPreview(fallback: HTMLElement, item: HTMLElement, orderedIds: string[], draggedId: string) {
+      fallback.innerHTML = '';
+      fallback.addClass('is-multidrag-stack');
+      fallback.style.overflow = 'visible';
+      fallback.style.pointerEvents = 'none';
+      const stackIds = getMultiDragPreviewIds(orderedIds);
+      stackIds.forEach((id, index) => {
+          const sourceEl = id === draggedId
+              ? item
+              : this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`) as HTMLElement | null;
+          const layer = document.createElement('div');
+          const depth = getMultiDragVisibleDepth(stackIds.length, index);
+          layer.className = `kanban-multidrag-stack-card is-layer-${depth}`;
+          if (index === stackIds.length - 1) layer.classList.add('is-front');
+          const clone = (sourceEl || item).cloneNode(true) as HTMLElement;
+          clone.classList.remove('is-multidrag-source', 'is-multidrag-slot');
+          clone.style.margin = '0';
+          clone.style.width = '100%';
+          clone.style.height = '100%';
+          layer.appendChild(clone);
+          fallback.appendChild(layer);
+      });
+      const badge = document.createElement('div');
+      badge.className = 'kanban-multidrag-badge';
+      badge.textContent = `${orderedIds.length}`;
+      fallback.appendChild(badge);
+  }
+
+  private async playMultiDragExtraction(item: HTMLElement, fallback: HTMLElement, orderedIds: string[]) {
+      const state = this._multiDragState;
+      if (!state || orderedIds.length < 2) return;
+      const fallbackRect = this.snapshotRect(fallback);
+      const overlay = document.createElement('div');
+      overlay.className = 'kanban-multidrag-overlay';
+      document.body.appendChild(overlay);
+      const clones = orderedIds.map((id, index) => {
+          const sourceEl = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`) as HTMLElement | null;
+          const rect = state.sourceRects[id];
+          if (!sourceEl || !rect) return null;
+          sourceEl.addClass('is-multidrag-source');
+          const clone = this.createFlyClone(sourceEl, rect);
+          clone.style.transitionDelay = `${index * 34}ms`;
+          overlay.appendChild(clone);
+          return { clone, rect, index };
+      }).filter(Boolean) as Array<{ clone: HTMLElement; rect: RectSnapshot; index: number }>;
+      await this.nextFrame();
+      clones.forEach(({ clone, rect, index }) => {
+          const depth = getMultiDragVisibleDepth(orderedIds.length, index);
+          clone.style.transform = `translate(${fallbackRect.left - rect.left}px, ${fallbackRect.top - rect.top + depth * 8}px) scale(${1 - depth * 0.015})`;
+          clone.style.width = `${fallbackRect.width}px`;
+          clone.style.height = `${fallbackRect.height}px`;
+          clone.style.opacity = `${Math.max(0.18, 1 - depth * 0.14)}`;
+      });
+      await this.wait(240 + orderedIds.length * 34);
+      overlay.remove();
+      item.style.setProperty('opacity', '1', 'important');
+  }
+
+  private applyMultiDragFinalOrder(toContainer: HTMLElement, orderedIds: string[], draggedItem: HTMLElement) {
+      const currentCards = Array.from(toContainer.querySelectorAll('.kanban-card')) as HTMLElement[];
+      const currentIds = currentCards.map((el) => el.dataset.id || '');
+      const finalIds = applyMultiDragFinalOrderToIds(currentIds, orderedIds, draggedItem.dataset.id || '');
+      const orderedElMap = new Map<string, HTMLElement>();
+      orderedIds.forEach((id) => {
+          const el = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`) as HTMLElement | null;
+          if (el) orderedElMap.set(id, el);
+      });
+      const finalOrderedEls = finalIds
+          .map((id) => orderedElMap.get(id) || currentCards.find((el) => el.dataset.id === id) || null)
+          .filter(Boolean) as HTMLElement[];
+      finalOrderedEls.forEach((el) => toContainer.appendChild(el));
+      return orderedIds
+          .map((id) => orderedElMap.get(id) || null)
+          .filter(Boolean) as HTMLElement[];
+  }
+
+  private async playMultiDragInsertion(fallback: HTMLElement | null, orderedEls: HTMLElement[]) {
+      if (orderedEls.length < 2) return;
+      const state = this._multiDragState;
+      const baseRect = fallback ? this.snapshotRect(fallback) : state?.dragRect;
+      if (!baseRect) return;
+      const overlay = document.createElement('div');
+      overlay.className = 'kanban-multidrag-overlay';
+      document.body.appendChild(overlay);
+      const clones = orderedEls.map((el, index) => {
+          const depth = Math.max(0, Math.min(2, orderedEls.length - 1 - index));
+          const startRect = {
+              left: baseRect.left,
+              top: baseRect.top + depth * 10,
+              width: baseRect.width,
+              height: baseRect.height,
+          };
+          const targetRect = this.snapshotRect(el);
+          el.addClass('is-multidrag-slot');
+          el.style.setProperty('opacity', '0.18', 'important');
+          const clone = this.createFlyClone(el, startRect);
+          clone.style.transitionDelay = `${index * 42}ms`;
+          overlay.appendChild(clone);
+          return { clone, el, startRect, targetRect };
+      });
+      await this.nextFrame();
+      clones.forEach(({ clone, startRect, targetRect }) => {
+          clone.style.transform = `translate(${targetRect.left - startRect.left}px, ${targetRect.top - startRect.top}px) scale(1)`;
+          clone.style.width = `${targetRect.width}px`;
+          clone.style.height = `${targetRect.height}px`;
+          clone.style.opacity = '1';
+      });
+      await this.wait(260 + orderedEls.length * 42);
+      clones.forEach(({ el }) => {
+          el.removeClass('is-multidrag-slot');
+          el.style.opacity = '';
+      });
+      overlay.remove();
+  }
+
   onDataUpdated() {
+    if (this._suspendRerender) return;
     if (this.isRendering) return; this.isRendering = true;
     try {
         if (this.boardEl) {
@@ -959,6 +1377,33 @@ class KanbanView extends BasesView {
             const actionIcon = titleContainer.createDiv("kanban-card-menu-btn");
             actionIcon.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="12" cy="5" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="12" cy="19" r="1"></circle></svg>`;
 
+            // ✅ v1.1.0: 显示任务卡片所属的总结卡片引用
+            if (!isPinnedZone && card.type === 'virtual') {
+                const vc = settings.virtualCards.find((v: any) => v.id === card.id);
+                if (vc?.summaryCardId) {
+                    const summaryCard = settings.virtualCards.find((v: any) => v.id === vc.summaryCardId);
+                    if (summaryCard) {
+                        const refBadge = cardEl.createDiv("kanban-card-summary-ref");
+                        refBadge.style.cssText = "padding: 4px 8px; margin: 4px 8px 0 8px; background: rgba(var(--interactive-accent-rgb), 0.1); border-radius: 4px; font-size: 11px; color: var(--interactive-accent); display: flex; align-items: center; gap: 4px; cursor: pointer;";
+                        refBadge.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>`;
+                        const orderNum = vc.summaryOrder ? `-${String(vc.summaryOrder).padStart(2, '0')}` : '';
+                        refBadge.appendChild(document.createTextNode(`${summaryCard.title}${orderNum}`));
+                        refBadge.onclick = (e: MouseEvent) => {
+                            e.stopPropagation();
+                            const summaryCardData: CardData = {
+                                type: 'virtual', id: summaryCard.id, title: summaryCard.title,
+                                column: summaryCard.column, order: summaryCard.order || '0',
+                                pinnedOrder: summaryCard.pinnedOrder || '0', isCompleted: false,
+                                isPinned: true, ctime: Date.now(), projectValStr: '', progressValStr: '',
+                                middleValStr: '', customSortValStr: '', customBadges: {}, body: summaryCard.body || ''
+                            };
+                            this.openTaskSortingModal(summaryCardData);
+                        };
+                    }
+                }
+            }
+
+
             actionIcon.addEventListener('click', (e: MouseEvent) => {
                 e.stopPropagation();
                 try {
@@ -990,8 +1435,39 @@ class KanbanView extends BasesView {
                         });
 
                         menu.addItem((item: any) => {
-                            item.setTitle(isBulk ? `切换选中的 ${activeIds.length} 项的置顶状态` : (card.isPinned ? "取消置顶 (总结) 状态" : "标为置顶 (总结) 卡片")).onClick(async () => {
-                                await processBulk(async (id, isFile, file, vc) => { if (isFile && file instanceof TFile) { await this.app.fileManager.processFrontMatter(file, fm => { const currentPinned = fm[pinnedProp] === true || String(fm[pinnedProp]).toLowerCase() === 'true'; if(currentPinned) { delete fm[pinnedProp]; delete fm[yamlPinnedOrderProp]; } else { fm[pinnedProp] = true; delete fm[yamlOrderProp]; } }); } });
+                            item.setTitle(isBulk ? `切换选中的 ${activeIds.length} 项的总结状态` : (card.isPinned ? "移至任务区" : "标为总结卡片")).onClick(async () => {
+                                await processBulk(async (id, isFile, file, vc) => {
+                                    if (isFile && file instanceof TFile) {
+                                        await this.app.fileManager.processFrontMatter(file, fm => {
+                                            const currentPinned = fm[pinnedProp] === true || String(fm[pinnedProp]).toLowerCase() === 'true';
+                                            if(currentPinned) {
+                                                delete fm[pinnedProp];
+                                                delete fm[yamlPinnedOrderProp];
+                                                // ✅ v1.1.0-alpha.2: 移至任务区时修改前缀
+                                                if (settings.orderPrefix && yamlGroupProp && fm[yamlGroupProp]) {
+                                                    const currentVal = String(fm[yamlGroupProp]);
+                                                    const parts = currentVal.split(settings.orderSeparator || '-');
+                                                    if (parts.length >= 2 && settings.summaryCardPrefix && parts[0] === settings.summaryCardPrefix) {
+                                                        parts[0] = settings.orderPrefix;
+                                                        fm[yamlGroupProp] = parts.join(settings.orderSeparator || '-');
+                                                    }
+                                                }
+                                            } else {
+                                                fm[pinnedProp] = true;
+                                                delete fm[yamlOrderProp];
+                                                // ✅ v1.1.0-alpha.2: 标为总结卡片时修改前缀
+                                                if (settings.summaryCardPrefix && yamlGroupProp && fm[yamlGroupProp]) {
+                                                    const currentVal = String(fm[yamlGroupProp]);
+                                                    const parts = currentVal.split(settings.orderSeparator || '-');
+                                                    if (parts.length >= 2 && settings.orderPrefix && parts[0] === settings.orderPrefix) {
+                                                        parts[0] = settings.summaryCardPrefix;
+                                                        fm[yamlGroupProp] = parts.join(settings.orderSeparator || '-');
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    }
+                                });
                                 setTimeout(() => this.requestUpdate(), 300);
                             });
                         });
@@ -1056,11 +1532,41 @@ class KanbanView extends BasesView {
                             });
 
                             menu.addItem((item: any) => {
-                                item.setTitle(isBulk ? `切换选中的 ${activeIds.length} 项的置顶状态` : (card.isPinned ? "取消置顶 (总结) 状态" : "标为置顶 (总结) 卡片")).onClick(async () => {
-                                    await processBulk(async (id, isFile, file, vc) => { if (vc) vc.pinned = !vc.pinned; });
+                                item.setTitle(isBulk ? `切换选中的 ${activeIds.length} 项的总结状态` : (card.isPinned ? "移至任务区" : "标为总结卡片")).onClick(async () => {
+                                    await processBulk(async (id, isFile, file, vc) => {
+                                        if (vc) {
+                                            const wasPinned = vc.pinned;
+                                            vc.pinned = !vc.pinned;
+                                            // ✅ v1.1.0-alpha.2: 虚拟卡片切换时修改前缀
+                                            if (vc.column && settings.orderSeparator) {
+                                                const parts = vc.column.split(settings.orderSeparator);
+                                                if (parts.length >= 2) {
+                                                    if (wasPinned && settings.orderPrefix && parts[0] === settings.summaryCardPrefix) {
+                                                        // 从总结区移至任务区
+                                                        parts[0] = settings.orderPrefix;
+                                                        vc.column = parts.join(settings.orderSeparator);
+                                                    } else if (!wasPinned && settings.summaryCardPrefix && parts[0] === settings.orderPrefix) {
+                                                        // 从任务区移至总结区
+                                                        parts[0] = settings.summaryCardPrefix;
+                                                        vc.column = parts.join(settings.orderSeparator);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    });
                                     await this.plugin.saveSettings(true); this.requestUpdate();
                                 });
                             });
+
+                            // ✅ v1.1.0: 总结卡片关联任务功能
+                            if (card.isPinned && !isBulk) {
+                                menu.addItem((item: any) => {
+                                    item.setTitle("管理关联任务").onClick(() => {
+                                        this.openTaskAssociationModal(card);
+                                    });
+                                });
+                            }
+
                             menu.addSeparator();
                             menu.addItem((item: any) => { item.setTitle(isBulk ? `归档选定的 ${activeIds.length} 项草稿` : "归档此草稿").onClick(async () => { await processBulk(async (id, isFile, file, vc) => { if (vc) vc.archived = true; }); this.selectedCards.clear(); await this.plugin.saveSettings(true); this.requestUpdate(); }); });
                         } else {
@@ -1133,71 +1639,62 @@ class KanbanView extends BasesView {
                     const draggedId = item.dataset.id;
                     const isMultiDrag = draggedId && this.selectedCards.has(draggedId) && this.selectedCards.size > 1;
 
-                    // 保存鼠标点击位置相对于卡片的偏移
                     const rect = item.getBoundingClientRect();
                     const mouseX = evt.originalEvent.clientX;
                     const mouseY = evt.originalEvent.clientY;
                     const offsetX = mouseX - rect.left;
                     const offsetY = mouseY - rect.top;
 
-                    console.log('[拖拽调试] 鼠标位置:', { mouseX, mouseY });
-                    console.log('[拖拽调试] 卡片rect:', { left: rect.left, top: rect.top, width: rect.width, height: rect.height });
-                    console.log('[拖拽调试] 计算偏移:', { offsetX, offsetY });
-
-                    // 保存多选卡片的原始顺序
-                    if (isMultiDrag) {
-                        const fromContainer = evt.from;
+                    if (isMultiDrag && draggedId) {
+                        const fromContainer = evt.from as HTMLElement;
                         const allCardsInFrom = Array.from(fromContainer.querySelectorAll('.kanban-card')) as HTMLElement[];
                         this._dragOriginalOrder = allCardsInFrom
                             .filter(el => this.selectedCards.has(el.dataset.id!))
                             .map(el => el.dataset.id!);
+                        const sourceRects: Record<string, RectSnapshot> = {};
+                        this._dragOriginalOrder.forEach((id) => {
+                            const el = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`) as HTMLElement | null;
+                            if (el) sourceRects[id] = this.snapshotRect(el);
+                        });
+                        this._multiDragState = {
+                            orderedIds: [...this._dragOriginalOrder],
+                            sourceRects,
+                            dragRect: this.snapshotRect(item),
+                            pointerOffsetX: offsetX,
+                            pointerOffsetY: offsetY,
+                        };
                     } else {
                         this._dragOriginalOrder = [];
+                        this._multiDragState = null;
                     }
 
-                    // 强制原始卡片保持完全不透明
                     item.style.setProperty('opacity', '1', 'important');
 
-                    // 自定义 fallback 元素
-                    requestAnimationFrame(() => {
+                    requestAnimationFrame(async () => {
                         const fallback = document.querySelector('.kanban-card-fallback') as HTMLElement;
                         if (!fallback) return;
 
-                        // 完全禁用 SortableJS 的 transform，我们手动控制位置
                         fallback.style.transform = 'none';
                         fallback.style.transition = 'none';
                         fallback.style.willChange = 'left, top';
 
-                        // 手动跟随鼠标的函数
                         const updatePosition = (e: MouseEvent) => {
                             const newLeft = e.clientX - offsetX;
                             const newTop = e.clientY - offsetY;
                             fallback.style.left = `${newLeft}px`;
                             fallback.style.top = `${newTop}px`;
-                            // 强制覆盖 SortableJS 可能设置的 transform
                             fallback.style.transform = 'none';
                         };
 
-                        // 监听鼠标移动
                         const mouseMoveHandler = (e: MouseEvent) => {
                             updatePosition(e);
                         };
 
                         document.addEventListener('mousemove', mouseMoveHandler);
-
-                        // 保存 handler 以便清理
                         (fallback as any)._mouseMoveHandler = mouseMoveHandler;
-
-                        // 初始位置
                         fallback.style.left = `${mouseX - offsetX}px`;
                         fallback.style.top = `${mouseY - offsetY}px`;
 
-                        console.log('[拖拽调试] 初始位置设置:', {
-                            left: mouseX - offsetX,
-                            top: mouseY - offsetY
-                        });
-
-                        // 使用 MutationObserver 监听并阻止 SortableJS 修改 transform
                         const observer = new MutationObserver((mutations) => {
                             for (const mutation of mutations) {
                                 if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
@@ -1214,66 +1711,35 @@ class KanbanView extends BasesView {
                             attributeFilter: ['style']
                         });
 
-                        // 保存 observer 以便清理
                         (fallback as any)._transformObserver = observer;
 
-                        if (isMultiDrag) {
-                            // 多选：仅显示被拖拽的卡片 + 右上角数量角标
+                        if (isMultiDrag && draggedId) {
+                            const orderedIds = this._multiDragState?.orderedIds || [];
                             const allDomCards = Array.from(this.boardEl.querySelectorAll('.kanban-card')) as HTMLElement[];
                             const selectedEls = allDomCards.filter(el => this.selectedCards.has(el.dataset.id!));
-                            const count = this.selectedCards.size;
-
-                            // 清空 fallback 并重新构建
-                            fallback.innerHTML = '';
                             fallback.style.width = `${rect.width}px`;
                             fallback.style.height = `${rect.height}px`;
-                            fallback.style.overflow = 'visible';
                             fallback.style.opacity = '1';
-                            fallback.style.pointerEvents = 'none';
-
-                            // 克隆被拖拽的卡片
-                            const cardClone = item.cloneNode(true) as HTMLElement;
-                            cardClone.style.cssText = 'width:100%;height:100%;margin:0;';
-                            fallback.appendChild(cardClone);
-
-                            // 数量角标
-                            const badge = document.createElement('div');
-                            badge.style.cssText = [
-                                'position:absolute',
-                                'top:-8px',
-                                'right:-8px',
-                                'background:var(--interactive-accent)',
-                                'color:#fff',
-                                'border-radius:50%',
-                                'width:24px',
-                                'height:24px',
-                                'display:flex',
-                                'align-items:center',
-                                'justify-content:center',
-                                'font-size:12px',
-                                'font-weight:700',
-                                'z-index:1000',
-                                'box-shadow:0 2px 6px rgba(0,0,0,0.3)',
-                            ].join(';');
-                            badge.textContent = String(count);
-                            fallback.appendChild(badge);
-
-                            // 隐藏其他选中的卡片（除了被拖拽的）
+                            this.buildMultiDragPreview(fallback, item, orderedIds, draggedId);
                             selectedEls.forEach(el => {
-                                if (el !== item) {
-                                    el.style.setProperty('opacity', '0.3', 'important');
-                                }
+                                if (el !== item) el.addClass('is-multidrag-source');
                             });
+                            await this.playMultiDragExtraction(item, fallback, orderedIds);
                         } else {
-                            // 单选：直接显示
                             fallback.style.opacity = '1';
                         }
                     });
                 },
+                onMove: (evt: any) => {
+                    const draggedId = evt.dragged?.dataset?.id;
+                    const isMultiDrag = draggedId && this.selectedCards.has(draggedId) && this.selectedCards.size > 1;
+                    this.updateMultiDragSlotPreview(evt, !!isMultiDrag);
+                    return true;
+                },
                 onEnd: async (evt: any) => {
                     this.boardEl.removeClass("is-dragging-card");
+                    this.clearMultiDragSlotPreview();
 
-                    // 清理 mousemove 监听器和 observer
                     const fallback = document.querySelector('.kanban-card-fallback') as HTMLElement;
                     if (fallback) {
                         if ((fallback as any)._mouseMoveHandler) {
@@ -1284,52 +1750,104 @@ class KanbanView extends BasesView {
                             (fallback as any)._transformObserver.disconnect();
                             delete (fallback as any)._transformObserver;
                         }
+                        fallback.removeClass('is-multidrag-stack');
                     }
 
-                    // 恢复所有卡片的透明度
                     this.boardEl.querySelectorAll('.kanban-card').forEach((el: Element) => {
                         (el as HTMLElement).style.opacity = '';
+                        (el as HTMLElement).removeClass('is-multidrag-source');
+                        (el as HTMLElement).removeClass('is-multidrag-slot');
                     });
                     this.boardEl.querySelectorAll('.is-hidden-by-multidrag').forEach((el: Element) => el.classList.remove('is-hidden-by-multidrag'));
 
-                    const draggedId = evt.item.dataset.id; const toColName = evt.to.dataset.colId;
-                    const isToPinned = evt.to.dataset.isPinned === "true"; const isFromPinned = evt.from.dataset.isPinned === "true";
-                    const activeIds = (draggedId && this.selectedCards.has(draggedId) && this.selectedCards.size > 1) ? Array.from(this.selectedCards) : [draggedId];
-                    if (isToPinned && !isFromPinned) evt.item.addClass("is-pinned"); else if (!isToPinned && isFromPinned) evt.item.removeClass("is-pinned");
+                    const draggedId = evt.item.dataset.id;
+                    const toColName = evt.to.dataset.colId;
+                    const isToPinned = evt.to.dataset.isPinned === "true";
+                    const isFromPinned = evt.from.dataset.isPinned === "true";
+                    const isMultiDrag = draggedId && this.selectedCards.has(draggedId) && this.selectedCards.size > 1;
+                    const activeIds = isMultiDrag ? (this._multiDragState?.orderedIds || Array.from(this.selectedCards)) : [draggedId];
                     let settingsNeedSave = false;
-                    if (activeIds.length > 1) {
-                        // ✅ v1.0.1-beta: 使用拖拽前保存的原始顺序插入卡片
-                        const toContainer = evt.to;
-                        const refNode = evt.item.nextSibling;
 
-                        // 按原始顺序插入其他选中的卡片
-                        for (const id of this._dragOriginalOrder) {
-                            if (id === draggedId) continue; // 跳过主卡片
-                            const el = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`) as HTMLElement;
-                            if (el) {
-                                if (refNode) toContainer.insertBefore(el, refNode);
-                                else toContainer.appendChild(el);
+                    let finalOrderedEls: HTMLElement[] = [];
+                    if (isMultiDrag) {
+                        finalOrderedEls = this.applyMultiDragFinalOrder(evt.to as HTMLElement, activeIds as string[], evt.item as HTMLElement);
+                    }
+
+                    const syncMovedCards = async () => {
+                        for (const id of activeIds) {
+                            const el = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id as string)}"]`) as HTMLElement;
+                            if (!el) continue;
+                            if (isToPinned && !isFromPinned) el.addClass("is-pinned");
+                            else if (!isToPinned && isFromPinned) el.removeClass("is-pinned");
+                            const elType = el.dataset.type;
+                            if (elType === 'virtual') {
+                                const vc = settings.virtualCards.find((v:any) => v.id === id);
+                                if (vc && vc.column !== toColName) {
+                                    vc.column = toColName;
+                                    settingsNeedSave = true;
+                                }
+                                if (isToPinned && vc && !vc.pinned) {
+                                    vc.pinned = true;
+                                    settingsNeedSave = true;
+                                } else if (!isToPinned && isFromPinned && vc && vc.pinned) {
+                                    vc.pinned = false;
+                                    settingsNeedSave = true;
+                                }
+                            } else {
+                                const f = this.app.vault.getAbstractFileByPath(id!);
+                                if (f instanceof TFile) {
+                                    await this.app.fileManager.processFrontMatter(f, fm => {
+                                        if (fm[yamlGroupProp] !== toColName) {
+                                            fm[yamlGroupProp] = toColName;
+                                            settingsNeedSave = true;
+                                        }
+                                        if (isToPinned && !isFromPinned) {
+                                            fm[pinnedProp] = true;
+                                            delete fm[yamlOrderProp];
+                                        } else if (!isToPinned && isFromPinned) {
+                                            delete fm[pinnedProp];
+                                        }
+                                        if (isProgressSync && yamlProgProp && toColName) {
+                                            fm[yamlProgProp] = [toColName];
+                                        }
+                                    });
+                                }
                             }
                         }
-                        this._dragOriginalOrder = []; // 清空
+                    };
+
+                    updateProgress(evt.from.dataset.colId);
+                    if (evt.from !== evt.to) updateProgress(evt.to.dataset.colId);
+
+                    try {
+                        await runMultiDragCommitPhases({
+                            setSuspended: (value) => {
+                                this._suspendRerender = value;
+                            },
+                            syncMovedCards,
+                            playInsertion: async () => {
+                                if (isMultiDrag && finalOrderedEls.length > 0) {
+                                    await this.playMultiDragInsertion(fallback, finalOrderedEls);
+                                }
+                            },
+                            rewriteTargetOrder: async () => {
+                                const siblingEls = Array.from(evt.to.querySelectorAll('.kanban-card')) as HTMLElement[];
+                                await rewriteColumnOrder(siblingEls, toColName, isToPinned, false);
+                            },
+                            rewriteSourceOrder: async () => {
+                                if (isGlobalAuto && evt.from !== evt.to) {
+                                    const fromSiblingEls = Array.from(evt.from.querySelectorAll('.kanban-card')) as HTMLElement[];
+                                    await rewriteColumnOrder(fromSiblingEls, evt.from.dataset.colId!, isFromPinned, false);
+                                }
+                            },
+                            persistSettings: async () => {
+                                if (settingsNeedSave) await this.plugin.saveSettings(false);
+                            },
+                        });
+                    } finally {
+                        this._multiDragState = null;
+                        this._dragOriginalOrder = [];
                     }
-                    for (const id of activeIds) {
-                        const el = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id as string)}"]`) as HTMLElement; if (!el) continue;
-                        const elType = el.dataset.type;
-                        if (elType === 'virtual') { const vc = settings.virtualCards.find((v:any) => v.id === id); if (vc && vc.column !== toColName) { vc.column = toColName; settingsNeedSave = true; } if (isToPinned && vc) { vc.pinned = true; settingsNeedSave = true; } else if (!isToPinned && isFromPinned && vc) { vc.pinned = false; settingsNeedSave = true; } }
-                        else { const f = this.app.vault.getAbstractFileByPath(id!); if (f instanceof TFile) { await this.app.fileManager.processFrontMatter(f, fm => { if (fm[yamlGroupProp] !== toColName) { fm[yamlGroupProp] = toColName; settingsNeedSave = true; } if (isToPinned && !isFromPinned) { fm[pinnedProp] = true; delete fm[yamlOrderProp]; } else if (!isToPinned && isFromPinned) { delete fm[pinnedProp]; } if (isProgressSync && yamlProgProp && toColName) { fm[yamlProgProp] = [toColName]; } }); } }
-                    }
-                    updateProgress(evt.from.dataset.colId); if (evt.from !== evt.to) updateProgress(evt.to.dataset.colId);
-                    const siblingEls = Array.from(evt.to.querySelectorAll(".kanban-card")) as HTMLElement[];
-                    await rewriteColumnOrder(siblingEls, toColName, isToPinned, false); // 恢复 frontmatter 更新
-                    if (isGlobalAuto && evt.from !== evt.to) {
-                        const fromSiblingEls = Array.from(evt.from.querySelectorAll(".kanban-card")) as HTMLElement[];
-                        await rewriteColumnOrder(fromSiblingEls, evt.from.dataset.colId!, isFromPinned, false); // 恢复 frontmatter 更新
-                    }
-                    // ✅ v1.0.6 FIX: 拖拽结束不再调 requestUpdate()。
-                    // SortableJS 已将 DOM 移动到正确位置，只需持久化数据即可。
-                    // requestUpdate 会触发 containerEl.empty() 全板重建，导致闪烁。
-                    if (settingsNeedSave) await this.plugin.saveSettings(false);
                 }
             });
             this.sortables.push(sortable);
@@ -1513,7 +2031,7 @@ class KanbanView extends BasesView {
             pinnedInnerEl.dataset.colId = colName; pinnedInnerEl.dataset.isPinned = "true";
 
             const pinnedHintEl = pinnedInnerEl.createDiv("kanban-pinned-hint");
-            pinnedHintEl.textContent = "↑ 拖拽到此置顶 ↑";
+            pinnedHintEl.textContent = "↑ 拖拽到此区域作为总结卡片 ↑";
 
             drawerWrap.onclick = async () => {
                 if (!this.plugin.settings.expandedPinnedCols) this.plugin.settings.expandedPinnedCols = {};
