@@ -2,7 +2,7 @@ import { Plugin, TFile, Modal, Setting, Notice, Menu, App } from "obsidian";
 import * as obsidian from "obsidian";
 import Sortable from "sortablejs";
 import { TaskKanbanSettingTab, PluginSettings, DEFAULT_SETTINGS, MetaTagConfig, GlobalMetaStyle } from "./settings";
-import { applyMultiDragFinalOrderToIds, getMultiDragPreviewIds, getMultiDragVisibleDepth, runMultiDragCommitPhases } from "./multidrag-order";
+import { applyMultiDragFinalOrderToIds, getMultiDragAnchoredPreviewIds, getMultiDragExtractionLayerMotionProfile, getMultiDragExtractionPreviewIds, getMultiDragFlightDurationMs, getMultiDragLayerMotionProfile, getMultiDragPhaseVisibility, getMultiDragPreviewIds, getMultiDragVisibleDepth, MULTIDRAG_EXTRACTION_STEP_MS, runMultiDragCommitPhases, sanitizeMultiDragCloneClassNames } from "./multidrag-order";
 
 const BasesView = (obsidian as any).BasesView;
 
@@ -640,6 +640,8 @@ interface MultiDragState {
     dragRect: RectSnapshot;
     pointerOffsetX: number;
     pointerOffsetY: number;
+    draggedPreviewEl?: HTMLElement;
+    pendingInsertionRects?: RectSnapshot[];
 }
 
 class KanbanView extends BasesView {
@@ -656,6 +658,8 @@ class KanbanView extends BasesView {
   private _suspendRerender: boolean = false;
   private _dragSlotEl: HTMLElement | null = null;
   private _dragSlotContainer: HTMLElement | null = null;
+  private _lastMultiDragMoveGate: string | null = null;
+  private _lastMultiDragSlotTarget: string | null = null;
 
   constructor(controller: any, scrollEl: HTMLElement, plugin: TaskKanbanPlugin) { super(controller); this.plugin = plugin; this.containerEl = scrollEl.createDiv("kanban-view-container"); }
 
@@ -696,6 +700,39 @@ class KanbanView extends BasesView {
       });
   }
 
+  private reportMultiDragGate(stage: 'start' | 'end', payload: {
+      draggedId?: string;
+      selectedCount: number;
+      draggedSelected: boolean;
+      isMultiDrag: boolean;
+      orderedCount: number;
+      finalCount?: number;
+  }) {
+      console.log('[bases-kanban-view] multi-drag gate', {
+          stage,
+          vault: this.app.vault.getName(),
+          ...payload,
+      });
+      const parts = [
+          `sel=${payload.selectedCount}`,
+          `hit=${payload.draggedSelected ? 'Y' : 'N'}`,
+          `multi=${payload.isMultiDrag ? 'Y' : 'N'}`,
+          `ordered=${payload.orderedCount}`,
+      ];
+      if (typeof payload.finalCount === 'number') parts.push(`final=${payload.finalCount}`);
+      new Notice(`[BKV ${stage}] ${parts.join(' | ')}`, 7000);
+  }
+
+  private reportMultiDragVisual(stage: string, payload: Record<string, unknown>) {
+      console.log('[bases-kanban-view] multi-drag visual', {
+          stage,
+          vault: this.app.vault.getName(),
+          ...payload,
+      });
+      const parts = Object.entries(payload).map(([key, value]) => `${key}=${String(value)}`);
+      new Notice(`[BKV ${stage}] ${parts.join(' | ')}`, 7000);
+  }
+
   private snapshotRect(el: HTMLElement): RectSnapshot {
       const rect = el.getBoundingClientRect();
       return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
@@ -718,49 +755,104 @@ class KanbanView extends BasesView {
 
   private updateMultiDragSlotPreview(evt: any, isMultiDrag: boolean) {
       this.clearMultiDragSlotPreview();
-      if (!isMultiDrag) return;
+      if (!isMultiDrag) {
+          this._lastMultiDragSlotTarget = null;
+          return;
+      }
       const to = evt.to as HTMLElement | null;
       const related = evt.related as HTMLElement | null;
       if (to) {
           to.addClass('is-multidrag-slot-container');
           this._dragSlotContainer = to;
       }
+      const slotTarget = related && related !== evt.dragged ? (related.dataset.id || '(no-id)') : '(none)';
       if (related && related !== evt.dragged) {
           related.addClass('is-multidrag-slot-preview');
           this._dragSlotEl = related;
+      }
+      if (slotTarget !== this._lastMultiDragSlotTarget) {
+          this._lastMultiDragSlotTarget = slotTarget;
+          this.reportMultiDragVisual('slot', {
+              related: slotTarget,
+              shadow: related && related !== evt.dragged ? getComputedStyle(related).boxShadow : '(none)',
+          });
       }
   }
 
   private createFlyClone(sourceEl: HTMLElement, rect: RectSnapshot) {
       const clone = sourceEl.cloneNode(true) as HTMLElement;
-      clone.classList.remove('is-selected', 'is-multidrag-source', 'is-multidrag-slot', 'is-multidrag-slot-preview');
+      clone.className = sanitizeMultiDragCloneClassNames(Array.from(clone.classList)).join(' ');
       clone.classList.add('kanban-multidrag-fly-card');
       clone.style.left = `${rect.left}px`;
       clone.style.top = `${rect.top}px`;
       clone.style.width = `${rect.width}px`;
       clone.style.height = `${rect.height}px`;
+      clone.style.opacity = '1';
+      clone.style.transform = '';
+      clone.style.filter = 'none';
       return clone;
   }
 
-  private buildMultiDragPreview(fallback: HTMLElement, item: HTMLElement, orderedIds: string[], draggedId: string) {
+  private clearMultiDragVisualState() {
+      this.boardEl.querySelectorAll('.kanban-card').forEach((el: Element) => {
+          (el as HTMLElement).style.opacity = '';
+          (el as HTMLElement).removeClass('is-multidrag-source');
+          (el as HTMLElement).removeClass('is-multidrag-slot');
+      });
+      this.boardEl.querySelectorAll('.is-hidden-by-multidrag').forEach((el: Element) => el.classList.remove('is-hidden-by-multidrag'));
+      const fallback = document.querySelector('.kanban-card-fallback') as HTMLElement | null;
+      if (fallback) {
+          fallback.removeClass('is-multidrag-stack');
+          fallback.style.opacity = '';
+          fallback.style.overflow = '';
+          fallback.style.pointerEvents = '';
+      }
+  }
+
+  private applyMultiDragPhaseVisibility(phase: 'extracting' | 'dragging' | 'inserting', fallback: HTMLElement | null, sourceEls: HTMLElement[] = [], slotEls: HTMLElement[] = []) {
+      const visibility = getMultiDragPhaseVisibility(phase);
+      if (fallback) {
+          fallback.style.opacity = visibility.fallbackVisible ? '1' : '0';
+      }
+      sourceEls.forEach((el) => {
+          if (visibility.sourceCardsHidden) el.addClass('is-multidrag-source');
+          else el.removeClass('is-multidrag-source');
+      });
+      slotEls.forEach((el) => {
+          if (visibility.slotCardsDimmed) {
+              el.addClass('is-multidrag-slot');
+              el.style.setProperty('opacity', '0.18', 'important');
+          } else {
+              el.removeClass('is-multidrag-slot');
+              el.style.opacity = '';
+          }
+      });
+  }
+
+  private buildMultiDragPreview(fallback: HTMLElement, item: HTMLElement, orderedIds: string[], draggedId: string, previewIds?: string[]) {
       fallback.innerHTML = '';
       fallback.addClass('is-multidrag-stack');
       fallback.style.overflow = 'visible';
       fallback.style.pointerEvents = 'none';
-      const stackIds = getMultiDragPreviewIds(orderedIds);
+      const stackIds = previewIds ? [...previewIds] : getMultiDragAnchoredPreviewIds(orderedIds, draggedId);
+      const draggedPreviewEl = this._multiDragState?.draggedPreviewEl ?? null;
+      const draggedSourceEl = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(draggedId)}"]`) as HTMLElement | null;
       stackIds.forEach((id, index) => {
           const sourceEl = id === draggedId
-              ? item
+              ? draggedPreviewEl || draggedSourceEl || item
               : this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`) as HTMLElement | null;
           const layer = document.createElement('div');
           const depth = getMultiDragVisibleDepth(stackIds.length, index);
           layer.className = `kanban-multidrag-stack-card is-layer-${depth}`;
           if (index === stackIds.length - 1) layer.classList.add('is-front');
           const clone = (sourceEl || item).cloneNode(true) as HTMLElement;
-          clone.classList.remove('is-multidrag-source', 'is-multidrag-slot');
+          clone.className = sanitizeMultiDragCloneClassNames(Array.from(clone.classList)).join(' ');
           clone.style.margin = '0';
           clone.style.width = '100%';
           clone.style.height = '100%';
+          clone.style.opacity = '1';
+          clone.style.transform = '';
+          clone.style.filter = 'none';
           layer.appendChild(clone);
           fallback.appendChild(layer);
       });
@@ -772,31 +864,81 @@ class KanbanView extends BasesView {
 
   private async playMultiDragExtraction(item: HTMLElement, fallback: HTMLElement, orderedIds: string[]) {
       const state = this._multiDragState;
-      if (!state || orderedIds.length < 2) return;
-      const fallbackRect = this.snapshotRect(fallback);
+      if (!state || orderedIds.length < 2) {
+          this.reportMultiDragVisual('extract-skip', {
+              hasState: !!state,
+              ordered: orderedIds.length,
+          });
+          return;
+      }
       const overlay = document.createElement('div');
       overlay.className = 'kanban-multidrag-overlay';
       document.body.appendChild(overlay);
-      const clones = orderedIds.map((id, index) => {
+      const draggedId = item.dataset.id || '';
+      const extractionIds = orderedIds.filter((id) => id !== draggedId);
+      const sourceEls: HTMLElement[] = [];
+      const sources = extractionIds.map((id, index) => {
           const sourceEl = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`) as HTMLElement | null;
           const rect = state.sourceRects[id];
           if (!sourceEl || !rect) return null;
-          sourceEl.addClass('is-multidrag-source');
-          const clone = this.createFlyClone(sourceEl, rect);
-          clone.style.transitionDelay = `${index * 34}ms`;
-          overlay.appendChild(clone);
-          return { clone, rect, index };
-      }).filter(Boolean) as Array<{ clone: HTMLElement; rect: RectSnapshot; index: number }>;
-      await this.nextFrame();
-      clones.forEach(({ clone, rect, index }) => {
-          const depth = getMultiDragVisibleDepth(orderedIds.length, index);
-          clone.style.transform = `translate(${fallbackRect.left - rect.left}px, ${fallbackRect.top - rect.top + depth * 8}px) scale(${1 - depth * 0.015})`;
-          clone.style.width = `${fallbackRect.width}px`;
-          clone.style.height = `${fallbackRect.height}px`;
-          clone.style.opacity = `${Math.max(0.18, 1 - depth * 0.14)}`;
+          sourceEls.push(sourceEl);
+          return { sourceEl, rect, id, index };
+      }).filter(Boolean) as Array<{ sourceEl: HTMLElement; rect: RectSnapshot; id: string; index: number }>;
+      const initialRect = this.snapshotRect(fallback);
+      this.reportMultiDragVisual('extract-run', {
+          ordered: orderedIds.length,
+          clones: sources.length,
+          fallbackW: Math.round(initialRect.width),
+          fallbackH: Math.round(initialRect.height),
       });
-      await this.wait(240 + orderedIds.length * 34);
+      this.applyMultiDragPhaseVisibility('extracting', fallback, []);
+      this.buildMultiDragPreview(fallback, item, orderedIds, draggedId, getMultiDragExtractionPreviewIds(orderedIds, 0, draggedId));
+      await this.nextFrame();
+      const revealedIds = new Set<string>();
+      const animations = sources.map(({ sourceEl, rect, id }, index) => (async () => {
+          const clone = this.createFlyClone(sourceEl, rect);
+          overlay.appendChild(clone);
+          await this.nextFrame();
+          const nextVisibleIds = getMultiDragAnchoredPreviewIds(orderedIds.filter((candidateId) => candidateId === draggedId || revealedIds.has(candidateId) || candidateId === id), draggedId);
+          const layerIndex = nextVisibleIds.indexOf(id);
+          const profile = getMultiDragExtractionLayerMotionProfile(nextVisibleIds.length, layerIndex === -1 ? nextVisibleIds.length - 1 : layerIndex);
+          const duration = getMultiDragFlightDurationMs(nextVisibleIds.length, layerIndex === -1 ? nextVisibleIds.length - 1 : layerIndex);
+          const animateClone = (elapsed: number) => {
+              const progress = Math.min(1, elapsed / duration);
+              const easedProgress = 1 - Math.pow(1 - progress, 3);
+              const liveTargetRect = this.snapshotRect(fallback);
+              const currentLeft = rect.left + (liveTargetRect.left - rect.left) * easedProgress;
+              const currentTop = rect.top + (liveTargetRect.top - rect.top) * easedProgress;
+              const currentWidth = rect.width + (liveTargetRect.width - rect.width) * easedProgress;
+              const currentHeight = rect.height + (liveTargetRect.height - rect.height) * easedProgress;
+              const currentScale = 1 + (profile.scale - 1) * easedProgress;
+              clone.style.transitionDuration = '0ms';
+              clone.style.transform = `translate(${currentLeft - rect.left}px, ${currentTop - rect.top + profile.offsetY * easedProgress}px) scale(${currentScale})`;
+              clone.style.width = `${currentWidth}px`;
+              clone.style.height = `${currentHeight}px`;
+          };
+          const startedAt = performance.now();
+          const tick = () => {
+              const elapsed = performance.now() - startedAt;
+              animateClone(elapsed);
+              if (elapsed < duration) {
+                  rafId = window.requestAnimationFrame(tick);
+              }
+          };
+          animateClone(0);
+          let rafId = window.requestAnimationFrame(tick);
+          sourceEl.addClass('is-multidrag-source');
+          await this.wait(duration);
+          window.cancelAnimationFrame(rafId);
+          animateClone(duration);
+          revealedIds.add(id);
+          this.buildMultiDragPreview(fallback, item, orderedIds, draggedId, getMultiDragAnchoredPreviewIds(orderedIds.filter((candidateId) => candidateId === draggedId || revealedIds.has(candidateId)), draggedId));
+          clone.remove();
+      })());
+      await Promise.all(animations);
       overlay.remove();
+      this.buildMultiDragPreview(fallback, item, orderedIds, draggedId);
+      this.applyMultiDragPhaseVisibility('dragging', fallback, sourceEls);
       item.style.setProperty('opacity', '1', 'important');
   }
 
@@ -809,53 +951,142 @@ class KanbanView extends BasesView {
           const el = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`) as HTMLElement | null;
           if (el) orderedElMap.set(id, el);
       });
-      const finalOrderedEls = finalIds
-          .map((id) => orderedElMap.get(id) || currentCards.find((el) => el.dataset.id === id) || null)
-          .filter(Boolean) as HTMLElement[];
-      finalOrderedEls.forEach((el) => toContainer.appendChild(el));
-      return orderedIds
+      return finalIds
           .map((id) => orderedElMap.get(id) || null)
           .filter(Boolean) as HTMLElement[];
   }
 
-  private async playMultiDragInsertion(fallback: HTMLElement | null, orderedEls: HTMLElement[]) {
-      if (orderedEls.length < 2) return;
+  private commitMultiDragFinalOrder(toContainer: HTMLElement, orderedIds: string[], draggedItem: HTMLElement) {
+      const currentCards = Array.from(toContainer.querySelectorAll('.kanban-card')) as HTMLElement[];
+      const currentIds = currentCards.map((el) => el.dataset.id || '');
+      const finalIds = applyMultiDragFinalOrderToIds(currentIds, orderedIds, draggedItem.dataset.id || '');
+      const orderedElMap = new Map<string, HTMLElement>();
+      currentCards.forEach((el) => {
+          const id = el.dataset.id || '';
+          if (id) orderedElMap.set(id, el);
+      });
+      finalIds
+          .map((id) => orderedElMap.get(id) || null)
+          .filter(Boolean)
+          .forEach((el) => toContainer.appendChild(el as HTMLElement));
+  }
+
+  private measureMultiDragTargetRects(toContainer: HTMLElement, orderedEls: HTMLElement[], draggedItem: HTMLElement): RectSnapshot[] {
+      const currentCards = Array.from(toContainer.querySelectorAll('.kanban-card')) as HTMLElement[];
+      const currentIds = currentCards.map((el) => el.dataset.id || '');
+      const orderedIds = orderedEls.map((el) => el.dataset.id || '').filter(Boolean);
+      const finalIds = applyMultiDragFinalOrderToIds(currentIds, orderedIds, draggedItem.dataset.id || '');
+      const measureHost = document.createElement('div');
+      measureHost.style.position = 'fixed';
+      measureHost.style.left = '-20000px';
+      measureHost.style.top = '0';
+      measureHost.style.visibility = 'hidden';
+      measureHost.style.pointerEvents = 'none';
+      const measureContainer = toContainer.cloneNode(false) as HTMLElement;
+      measureContainer.style.height = `${toContainer.getBoundingClientRect().height}px`;
+      const sourceMap = new Map<string, HTMLElement>();
+      currentCards.forEach((el) => {
+          const id = el.dataset.id || '';
+          if (id) sourceMap.set(id, el);
+      });
+      finalIds.forEach((id) => {
+          const sourceEl = sourceMap.get(id);
+          if (!sourceEl) return;
+          const clone = sourceEl.cloneNode(true) as HTMLElement;
+          clone.className = sanitizeMultiDragCloneClassNames(Array.from(clone.classList)).join(' ');
+          clone.style.opacity = '1';
+          measureContainer.appendChild(clone);
+      });
+      measureHost.appendChild(measureContainer);
+      document.body.appendChild(measureHost);
+      const rects = orderedIds.map((id) => {
+          const targetEl = measureContainer.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`) as HTMLElement | null;
+          return targetEl ? this.snapshotRect(targetEl) : this.snapshotRect(draggedItem);
+      });
+      measureHost.remove();
+      return rects;
+  }
+
+  private async playMultiDragInsertion(fallback: HTMLElement | null, item: HTMLElement, orderedEls: HTMLElement[]) {
       const state = this._multiDragState;
-      const baseRect = fallback ? this.snapshotRect(fallback) : state?.dragRect;
-      if (!baseRect) return;
+      if (orderedEls.length < 2) {
+          if (state) state.pendingInsertionRects = undefined;
+          this.reportMultiDragVisual('insert-skip', {
+              ordered: orderedEls.length,
+              hasFallback: !!fallback,
+              hasState: !!state,
+          });
+          return;
+      }
+      const targetRects = state?.pendingInsertionRects && state.pendingInsertionRects.length === orderedEls.length
+          ? state.pendingInsertionRects
+          : orderedEls.map((el) => this.snapshotRect(el));
+      const orderedIds = state?.orderedIds ?? orderedEls.map((el) => el.dataset.id || '');
       const overlay = document.createElement('div');
       overlay.className = 'kanban-multidrag-overlay';
       document.body.appendChild(overlay);
-      const clones = orderedEls.map((el, index) => {
-          const depth = Math.max(0, Math.min(2, orderedEls.length - 1 - index));
+      const initialBaseRect = fallback ? this.snapshotRect(fallback) : state?.dragRect;
+      this.reportMultiDragVisual('insert-run', {
+          ordered: orderedEls.length,
+          baseW: Math.round(initialBaseRect?.width || 0),
+          baseH: Math.round(initialBaseRect?.height || 0),
+      });
+      this.applyMultiDragPhaseVisibility('inserting', fallback, [], orderedEls);
+      this.buildMultiDragPreview(
+          fallback,
+          item,
+          orderedIds,
+          item.dataset.id || '',
+          getMultiDragAnchoredPreviewIds(orderedIds, item.dataset.id || ''),
+      );
+      await this.nextFrame();
+      const pendingIds = new Set(orderedIds);
+      const animations = orderedEls.map((leavingEl, index) => (async () => {
+          const visibleIds = getMultiDragAnchoredPreviewIds(orderedIds.filter((candidateId) => pendingIds.has(candidateId)), item.dataset.id || '');
+          const targetRect = targetRects[index] || this.snapshotRect(leavingEl);
+          this.buildMultiDragPreview(
+              fallback,
+              item,
+              orderedIds,
+              item.dataset.id || '',
+              visibleIds,
+          );
+          const baseRect = fallback ? this.snapshotRect(fallback) : state?.dragRect;
+          if (!baseRect) return;
+          const layerIndex = visibleIds.indexOf(leavingEl.dataset.id || '');
+          const profile = getMultiDragLayerMotionProfile(visibleIds.length, layerIndex === -1 ? visibleIds.length - 1 : layerIndex);
+          const duration = getMultiDragFlightDurationMs(visibleIds.length, layerIndex === -1 ? visibleIds.length - 1 : layerIndex);
           const startRect = {
               left: baseRect.left,
-              top: baseRect.top + depth * 10,
+              top: baseRect.top + profile.offsetY,
               width: baseRect.width,
               height: baseRect.height,
           };
-          const targetRect = this.snapshotRect(el);
-          el.addClass('is-multidrag-slot');
-          el.style.setProperty('opacity', '0.18', 'important');
-          const clone = this.createFlyClone(el, startRect);
-          clone.style.transitionDelay = `${index * 42}ms`;
+          const clone = this.createFlyClone(leavingEl, startRect);
+          clone.style.transitionDuration = `${duration}ms`;
+          clone.style.transform = `scale(${profile.scale})`;
           overlay.appendChild(clone);
-          return { clone, el, startRect, targetRect };
-      });
-      await this.nextFrame();
-      clones.forEach(({ clone, startRect, targetRect }) => {
+          await this.nextFrame();
           clone.style.transform = `translate(${targetRect.left - startRect.left}px, ${targetRect.top - startRect.top}px) scale(1)`;
           clone.style.width = `${targetRect.width}px`;
           clone.style.height = `${targetRect.height}px`;
           clone.style.opacity = '1';
-      });
-      await this.wait(260 + orderedEls.length * 42);
-      clones.forEach(({ el }) => {
-          el.removeClass('is-multidrag-slot');
-          el.style.opacity = '';
-      });
+          await this.wait(duration);
+          pendingIds.delete(leavingEl.dataset.id || '');
+          this.buildMultiDragPreview(
+              fallback,
+              item,
+              orderedIds,
+              item.dataset.id || '',
+              getMultiDragAnchoredPreviewIds(orderedIds.filter((candidateId) => pendingIds.has(candidateId)), item.dataset.id || ''),
+          );
+          clone.remove();
+      })());
+      await Promise.all(animations);
       overlay.remove();
+      if (state) state.pendingInsertionRects = undefined;
   }
+
 
   onDataUpdated() {
     if (this._suspendRerender) return;
@@ -1656,23 +1887,50 @@ class KanbanView extends BasesView {
                             const el = this.boardEl.querySelector(`.kanban-card[data-id="${CSS.escape(id)}"]`) as HTMLElement | null;
                             if (el) sourceRects[id] = this.snapshotRect(el);
                         });
+                        const draggedPreviewEl = item.cloneNode(true) as HTMLElement;
+                        draggedPreviewEl.className = sanitizeMultiDragCloneClassNames(Array.from(draggedPreviewEl.classList)).join(' ');
+                        draggedPreviewEl.style.opacity = '1';
+                        draggedPreviewEl.style.transform = '';
+                        draggedPreviewEl.style.filter = 'none';
                         this._multiDragState = {
                             orderedIds: [...this._dragOriginalOrder],
                             sourceRects,
                             dragRect: this.snapshotRect(item),
                             pointerOffsetX: offsetX,
                             pointerOffsetY: offsetY,
+                            draggedPreviewEl,
                         };
                     } else {
                         this._dragOriginalOrder = [];
                         this._multiDragState = null;
                     }
 
+                    this.reportMultiDragGate('start', {
+                        draggedId,
+                        selectedCount: this.selectedCards.size,
+                        draggedSelected: !!(draggedId && this.selectedCards.has(draggedId)),
+                        isMultiDrag: !!isMultiDrag,
+                        orderedCount: this._multiDragState?.orderedIds.length || 0,
+                    });
+                    this._lastMultiDragMoveGate = null;
+
                     item.style.setProperty('opacity', '1', 'important');
 
                     requestAnimationFrame(async () => {
                         const fallback = document.querySelector('.kanban-card-fallback') as HTMLElement;
-                        if (!fallback) return;
+                        if (!fallback) {
+                            this.reportMultiDragVisual('fallback-miss', {
+                                multi: !!isMultiDrag,
+                                draggedId: draggedId || '(none)',
+                            });
+                            return;
+                        }
+
+                        this.reportMultiDragVisual('fallback-hit', {
+                            multi: !!isMultiDrag,
+                            fallbackW: Math.round(fallback.getBoundingClientRect().width),
+                            fallbackH: Math.round(fallback.getBoundingClientRect().height),
+                        });
 
                         fallback.style.transform = 'none';
                         fallback.style.transition = 'none';
@@ -1715,15 +1973,9 @@ class KanbanView extends BasesView {
 
                         if (isMultiDrag && draggedId) {
                             const orderedIds = this._multiDragState?.orderedIds || [];
-                            const allDomCards = Array.from(this.boardEl.querySelectorAll('.kanban-card')) as HTMLElement[];
-                            const selectedEls = allDomCards.filter(el => this.selectedCards.has(el.dataset.id!));
                             fallback.style.width = `${rect.width}px`;
                             fallback.style.height = `${rect.height}px`;
                             fallback.style.opacity = '1';
-                            this.buildMultiDragPreview(fallback, item, orderedIds, draggedId);
-                            selectedEls.forEach(el => {
-                                if (el !== item) el.addClass('is-multidrag-source');
-                            });
                             await this.playMultiDragExtraction(item, fallback, orderedIds);
                         } else {
                             fallback.style.opacity = '1';
@@ -1733,11 +1985,23 @@ class KanbanView extends BasesView {
                 onMove: (evt: any) => {
                     const draggedId = evt.dragged?.dataset?.id;
                     const isMultiDrag = draggedId && this.selectedCards.has(draggedId) && this.selectedCards.size > 1;
+                    const orderedCount = this._multiDragState?.orderedIds.length || 0;
+                    const moveGate = `${this.selectedCards.size}|${draggedId && this.selectedCards.has(draggedId) ? 1 : 0}|${isMultiDrag ? 1 : 0}|${orderedCount}`;
+                    if (moveGate !== this._lastMultiDragMoveGate) {
+                        this._lastMultiDragMoveGate = moveGate;
+                        console.log('[bases-kanban-view] multi-drag move gate', {
+                            vault: this.app.vault.getName(),
+                            draggedId,
+                            selectedCount: this.selectedCards.size,
+                            draggedSelected: !!(draggedId && this.selectedCards.has(draggedId)),
+                            isMultiDrag: !!isMultiDrag,
+                            orderedCount,
+                        });
+                    }
                     this.updateMultiDragSlotPreview(evt, !!isMultiDrag);
                     return true;
                 },
                 onEnd: async (evt: any) => {
-                    this.boardEl.removeClass("is-dragging-card");
                     this.clearMultiDragSlotPreview();
 
                     const fallback = document.querySelector('.kanban-card-fallback') as HTMLElement;
@@ -1750,15 +2014,7 @@ class KanbanView extends BasesView {
                             (fallback as any)._transformObserver.disconnect();
                             delete (fallback as any)._transformObserver;
                         }
-                        fallback.removeClass('is-multidrag-stack');
                     }
-
-                    this.boardEl.querySelectorAll('.kanban-card').forEach((el: Element) => {
-                        (el as HTMLElement).style.opacity = '';
-                        (el as HTMLElement).removeClass('is-multidrag-source');
-                        (el as HTMLElement).removeClass('is-multidrag-slot');
-                    });
-                    this.boardEl.querySelectorAll('.is-hidden-by-multidrag').forEach((el: Element) => el.classList.remove('is-hidden-by-multidrag'));
 
                     const draggedId = evt.item.dataset.id;
                     const toColName = evt.to.dataset.colId;
@@ -1769,9 +2025,15 @@ class KanbanView extends BasesView {
                     let settingsNeedSave = false;
 
                     let finalOrderedEls: HTMLElement[] = [];
-                    if (isMultiDrag) {
-                        finalOrderedEls = this.applyMultiDragFinalOrder(evt.to as HTMLElement, activeIds as string[], evt.item as HTMLElement);
-                    }
+
+                    this.reportMultiDragGate('end', {
+                        draggedId,
+                        selectedCount: this.selectedCards.size,
+                        draggedSelected: !!(draggedId && this.selectedCards.has(draggedId)),
+                        isMultiDrag: !!isMultiDrag,
+                        orderedCount: Array.isArray(activeIds) ? activeIds.length : 0,
+                        finalCount: finalOrderedEls.length,
+                    });
 
                     const syncMovedCards = async () => {
                         for (const id of activeIds) {
@@ -1826,8 +2088,24 @@ class KanbanView extends BasesView {
                             },
                             syncMovedCards,
                             playInsertion: async () => {
+                                if (isMultiDrag) {
+                                    finalOrderedEls = this.applyMultiDragFinalOrder(
+                                        evt.to as HTMLElement,
+                                        activeIds as string[],
+                                        evt.item as HTMLElement,
+                                    );
+                                    if (this._multiDragState && finalOrderedEls.length > 0) {
+                                        this._multiDragState.pendingInsertionRects = this.measureMultiDragTargetRects(
+                                            evt.to as HTMLElement,
+                                            finalOrderedEls,
+                                            evt.item as HTMLElement,
+                                        );
+                                    }
+                                }
                                 if (isMultiDrag && finalOrderedEls.length > 0) {
-                                    await this.playMultiDragInsertion(fallback, finalOrderedEls);
+                                    await this.playMultiDragInsertion(fallback, evt.item as HTMLElement, finalOrderedEls);
+                                    finalOrderedEls = this.applyMultiDragFinalOrder(evt.to as HTMLElement, activeIds as string[], evt.item as HTMLElement);
+                                    this.commitMultiDragFinalOrder(evt.to as HTMLElement, activeIds as string[], evt.item as HTMLElement);
                                 }
                             },
                             rewriteTargetOrder: async () => {
@@ -1845,8 +2123,11 @@ class KanbanView extends BasesView {
                             },
                         });
                     } finally {
+                        this.boardEl.removeClass("is-dragging-card");
+                        this.clearMultiDragVisualState();
                         this._multiDragState = null;
                         this._dragOriginalOrder = [];
+                        this._lastMultiDragMoveGate = null;
                     }
                 }
             });
@@ -2198,6 +2479,13 @@ export default class TaskKanbanPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+
+    const debugVaultName = this.app.vault.getName();
+    console.log("[bases-kanban-view] debug bundle loaded", {
+      vault: debugVaultName,
+      version: "1.1.0-alpha.2-debug-load-marker",
+    });
+    new Notice(`bases-kanban-view debug loaded: ${debugVaultName}`, 6000);
 
     // ✅ v1.0.3: 初始化/迁移视图组配置
     if (!this.settings.viewGroups || this.settings.viewGroups.length === 0) {

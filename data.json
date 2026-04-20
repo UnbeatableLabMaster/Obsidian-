@@ -41,7 +41,6 @@
   "dragLocked": false,
   "dragDelay": 0,
   "globalHiddenColumns": [
-    "待分类",
     "待分类任务"
   ],
   "hiddenColumns": {
@@ -117,7 +116,8 @@
   "columnWidths": {
     "蛋白质功能优化模型调研": 322,
     "待计划": 258,
-    "DNA 序列处理模型调研": 322
+    "DNA 序列处理模型调研": 319,
+    "待分类": 374
   },
   "columnOrders": {
     "任务执行情况": [
@@ -156,9 +156,8 @@
     ],
     "项目环节": [
       "DNA 序列处理模型调研",
-      "待分类",
-      "T",
-      "Retro"
+      "Retro",
+      "待分类"
     ]
   },
   "cardAliases": {},
